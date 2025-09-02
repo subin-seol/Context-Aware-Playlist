@@ -19,6 +19,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "COMP90018-Project"
+rootProject.name = "ContextTunes"
 include(":app")
- 
