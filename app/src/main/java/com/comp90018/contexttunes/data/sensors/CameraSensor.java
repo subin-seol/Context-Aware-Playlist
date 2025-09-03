@@ -1,4 +1,4 @@
-package com.comp90018.contexttunes.services;
+package com.comp90018.contexttunes.data.sensors;
 
 import android.Manifest;
 import android.app.Activity;

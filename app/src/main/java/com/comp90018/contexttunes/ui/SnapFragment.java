@@ -12,7 +12,7 @@ import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 
 import com.comp90018.contexttunes.R;
-import com.comp90018.contexttunes.services.CameraSensor;
+import com.comp90018.contexttunes.data.sensors.CameraSensor;
 
 public class SnapFragment extends Fragment {
     private TextureView textureView;
