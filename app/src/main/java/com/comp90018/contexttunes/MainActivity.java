@@ -9,8 +9,8 @@ import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.fragment.app.Fragment;
 
-import com.comp90018.contexttunes.ui.PlaylistFragment;
-import com.comp90018.contexttunes.ui.SnapFragment;
+import com.comp90018.contexttunes.ui.playlist.PlaylistFragment;
+import com.comp90018.contexttunes.ui.snap.SnapFragment;
 import com.comp90018.contexttunes.ui.home.HomeFragment;
 import com.google.android.material.bottomnavigation.BottomNavigationView;
 

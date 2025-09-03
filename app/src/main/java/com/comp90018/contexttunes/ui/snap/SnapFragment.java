@@ -1,4 +1,4 @@
-package com.comp90018.contexttunes.ui;
+package com.comp90018.contexttunes.ui.snap;
 
 import android.graphics.SurfaceTexture;
 import android.os.Bundle;
