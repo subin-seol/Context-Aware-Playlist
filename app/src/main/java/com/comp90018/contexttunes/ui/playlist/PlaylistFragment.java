@@ -1,4 +1,4 @@
-package com.comp90018.contexttunes.ui;
+package com.comp90018.contexttunes.ui.playlist;
 
 import android.os.Bundle;
 import android.view.LayoutInflater;
