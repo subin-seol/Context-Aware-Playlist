@@ -4,16 +4,23 @@ import android.Manifest;
 import android.app.Activity;
 import android.content.Context;
 import android.content.pm.PackageManager;
+import android.graphics.SurfaceTexture;
 import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCaptureSession;
 import android.hardware.camera2.CameraDevice;
 import android.hardware.camera2.CameraManager;
+import android.hardware.camera2.params.OutputConfiguration;
+import android.hardware.camera2.params.SessionConfiguration;
 import android.media.ImageReader;
 import android.os.Handler;
 import android.os.HandlerThread;
+import android.view.Surface;
 import android.view.TextureView;
 
 import androidx.core.app.ActivityCompat;
+
+import java.util.Collections;
+import java.util.concurrent.Executor;
 
 public class CameraSensor {
     private Context context;
@@ -101,7 +108,62 @@ public class CameraSensor {
     }
 
     // This method creates a camera preview session
+    // It tells the camera where to send the preview frames and actually starts the live camera feed
     private void createCameraPreviewSession() {
+        // 1. Get the SurfaceTexture from the TextureView
+        SurfaceTexture surfaceTexture = textureView.getSurfaceTexture();
+
+        // 2. Set the size of the SurfaceTexture
+        surfaceTexture.setDefaultBufferSize(textureView.getWidth(), textureView.getHeight());
+
+        // 3. Create a Surface from the SurfaceTexture
+        Surface previewSurface = new Surface(surfaceTexture);
+        OutputConfiguration outputConfig = new OutputConfiguration(previewSurface);
+        Executor backgroundExecutor = command -> backgroundHandler.post(command);
+
+        // 4. Create a new capture session
+
+        try {
+            // Create CaptureRequest.Builder for preview
+            final CameraDevice camera = cameraDevice;
+            final android.hardware.camera2.CaptureRequest.Builder previewRequestBuilder =
+                    camera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
+            previewRequestBuilder.addTarget(previewSurface);
+            // 2. Prepare the CameraCaptureSession using SessionConfiguration
+            SessionConfiguration sessionConfig = new SessionConfiguration(
+                    SessionConfiguration.SESSION_REGULAR,
+                    Collections.singletonList(outputConfig),
+                    backgroundExecutor,
+                    new CameraCaptureSession.StateCallback() {
+                        @Override
+                        public void onConfigured(@androidx.annotation.NonNull CameraCaptureSession session) {
+                            if (camera == null) return;
+                            captureSession = session;
+                            try {
+                                // 3. Start the continuous preview
+                                captureSession.setRepeatingRequest(
+                                        previewRequestBuilder.build(),
+                                        new CameraCaptureSession.CaptureCallback() {},
+                                        backgroundHandler
+                                );
+                            } catch (CameraAccessException e) {
+                                e.printStackTrace();
+                            }
+                        }
+
+                        @Override
+                        public void onConfigureFailed(@androidx.annotation.NonNull CameraCaptureSession session) {
+                            System.out.println("Camera configuration failed");
+                        }
+                    }
+            );
+
+            // 3. Create the session
+            camera.createCaptureSession(sessionConfig);
+
+        } catch (CameraAccessException e) {
+            e.printStackTrace();
+        }
 
     }
 }
