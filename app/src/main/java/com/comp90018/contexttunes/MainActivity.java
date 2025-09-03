@@ -9,26 +9,30 @@ import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.fragment.app.Fragment;
 
+import com.comp90018.contexttunes.databinding.ActivityMainBinding;
 import com.comp90018.contexttunes.ui.playlist.PlaylistFragment;
 import com.comp90018.contexttunes.ui.snap.SnapFragment;
 import com.comp90018.contexttunes.ui.home.HomeFragment;
-import com.google.android.material.bottomnavigation.BottomNavigationView;
 
 public class MainActivity extends AppCompatActivity {
+
+    private ActivityMainBinding binding;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         EdgeToEdge.enable(this);
-        setContentView(R.layout.activity_main);
-        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main), (v, insets) -> {
+
+        // Inflate binding instead of using setContentView(R.layout...)
+        binding = ActivityMainBinding.inflate(getLayoutInflater());
+        setContentView(binding.getRoot());
+
+        // Use view binding for root view
+        ViewCompat.setOnApplyWindowInsetsListener(binding.main, (v, insets) -> {
             Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
             v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom);
             return insets;
         });
-
-        // Find the bottom navigation
-        BottomNavigationView bottomNav = findViewById(R.id.bottom_nav);
 
         // Automatically load HomeFragment when app starts
         if (savedInstanceState == null){
@@ -37,11 +41,11 @@ public class MainActivity extends AppCompatActivity {
         }
 
         // Then set Home tab as selected
-        bottomNav.setSelectedItemId(R.id.nav_home);
+        binding.bottomNav.setSelectedItemId(R.id.nav_home);
 
         // Handle clicks
         // Defines behaviour when the user clicks on the bottom nav bar
-        bottomNav.setOnItemSelectedListener(item ->{
+        binding.bottomNav.setOnItemSelectedListener(item ->{
             Fragment selectedFragment = null;
 
             // Handle navigation item clicks
