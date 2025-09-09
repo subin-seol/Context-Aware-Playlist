@@ -1,6 +1,7 @@
 package com.comp90018.contexttunes;
 
 import android.os.Bundle;
+import android.view.View;
 
 import androidx.activity.EdgeToEdge;
 import androidx.appcompat.app.AppCompatActivity;
@@ -10,9 +11,9 @@ import androidx.core.view.WindowInsetsCompat;
 import androidx.fragment.app.Fragment;
 
 import com.comp90018.contexttunes.databinding.ActivityMainBinding;
+import com.comp90018.contexttunes.ui.home.HomeFragment;
 import com.comp90018.contexttunes.ui.playlist.PlaylistFragment;
 import com.comp90018.contexttunes.ui.snap.SnapFragment;
-import com.comp90018.contexttunes.ui.home.HomeFragment;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -72,6 +73,17 @@ public class MainActivity extends AppCompatActivity {
             return false;
         });
 
+    }
+
+    public void setBottomNavVisibility(boolean visible) {
+        if (binding != null) {
+            binding.bottomNav.setVisibility(visible ? View.VISIBLE : View.GONE);
+        }
+    }
+
+    public void goToHomeTab() {
+        // This triggers the BottomNavigationView listener and loads HomeFragment
+        binding.bottomNav.setSelectedItemId(R.id.nav_home);
     }
 
 
