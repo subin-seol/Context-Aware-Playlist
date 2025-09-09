@@ -1,3 +1,7 @@
 <resources>
     <string name="app_name">ContextTunes</string>
+    <string name="latitude_format">Latitude: %1$.5f</string>
+    <string name="longitude_format">Longitude: %1$.5f</string>
+    <string name="latitude_na">Latitude: N/A</string>
+    <string name="longitude_na">Longitude: N/A</string>
 </resources>
