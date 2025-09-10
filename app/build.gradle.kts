@@ -49,5 +49,6 @@ dependencies {
     androidTestImplementation(libs.espresso.core)
     implementation(libs.appcompat)
     implementation(libs.cameraCamera2)
+    implementation("com.google.android.gms:play-services-location:21.3.0")
 
 }
