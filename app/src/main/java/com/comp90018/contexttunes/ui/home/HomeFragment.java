@@ -19,6 +19,9 @@ import java.util.Locale;
 import com.comp90018.contexttunes.data.sensors.LightSensor;
 import com.comp90018.contexttunes.data.sensors.LightSensor.LightBucket;
 
+import com.comp90018.contexttunes.domain.Playlist;
+import com.comp90018.contexttunes.utils.PlaylistOpener;
+
 public class HomeFragment extends Fragment {
 
     private FragmentHomeBinding binding;
@@ -78,9 +81,17 @@ public class HomeFragment extends Fragment {
         });
 
         // GO button -> trigger recommendation
-        binding.btnGo.setOnClickListener(v ->
-                Toast.makeText(requireContext(), "Generating your vibe…", Toast.LENGTH_SHORT).show()
-        );
+        binding.btnGo.setOnClickListener(v -> {
+            // Create a test playlist
+            Playlist testPlaylist = new Playlist(
+                    "Focus Playlist",
+                    "spotify:playlist:37i9dQZF1DX0XUsuxWHRQd", // Example Spotify URI
+                    "https://open.spotify.com/playlist/37i9dQZF1DX0XUsuxWHRQd" // Web fallback
+            );
+
+            // Test the playlist opener
+            PlaylistOpener.openPlaylist(requireContext(), testPlaylist);
+        });
     }
 
     // Small helper to print nicer bucket names
