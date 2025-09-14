@@ -22,11 +22,18 @@ import com.comp90018.contexttunes.data.sensors.LightSensor.LightBucket;
 import com.comp90018.contexttunes.domain.Playlist;
 import com.comp90018.contexttunes.utils.PlaylistOpener;
 
+import com.comp90018.contexttunes.domain.Context;
+import com.comp90018.contexttunes.domain.Recommendation;
+import com.comp90018.contexttunes.domain.RuleEngine;
+
 public class HomeFragment extends Fragment {
 
     private FragmentHomeBinding binding;
 
     private LightSensor lightSensor;
+
+
+    private Recommendation currentRecommendation = null;
 
     @Nullable
     @Override
@@ -62,6 +69,9 @@ public class HomeFragment extends Fragment {
                         label = "Light: N/A";
                 }
                 binding.lightValue.setText(label);
+
+                // Update recommendation when light changes
+                updateRecommendation(bucket);
             });
         });
 
@@ -81,18 +91,43 @@ public class HomeFragment extends Fragment {
         });
 
         // GO button -> trigger recommendation
+        // NEW: Update recommendation when light changes
         binding.btnGo.setOnClickListener(v -> {
-            // Create a test playlist
-            Playlist testPlaylist = new Playlist(
-                    "Focus Playlist",
-                    "spotify:playlist:37i9dQZF1DX0XUsuxWHRQd", // Example Spotify URI
-                    "https://open.spotify.com/playlist/37i9dQZF1DX0XUsuxWHRQd" // Web fallback
-            );
-
-            // Test the playlist opener
-            PlaylistOpener.openPlaylist(requireContext(), testPlaylist);
+            if (currentRecommendation != null) {
+                PlaylistOpener.openPlaylist(requireContext(), currentRecommendation.playlist);
+            } else {
+                Toast.makeText(requireContext(), "Generating your vibe…", Toast.LENGTH_SHORT).show();
+            }
         });
     }
+
+
+
+    private void updateRecommendation(LightBucket lightBucket) {
+        // Create current context by combining sensor data
+        String timeOfDay = RuleEngine.getCurrentTimeOfDay();
+        String activity = "still"; // Mock data for now
+        Context context = new Context(lightBucket, timeOfDay, activity);
+
+        // Get rec from rule engine
+        Recommendation recommendation = RuleEngine.getRecommendation(context);
+
+        // Update UI
+        binding.welcomeSubtitle.setText(recommendation.reason);
+
+        // Store for GO button
+        currentRecommendation = recommendation;
+    }
+
+
+
+
+
+
+
+
+
+
 
     // Small helper to print nicer bucket names
     private String pretty(LightBucket b) {
