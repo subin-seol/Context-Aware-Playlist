@@ -37,18 +37,24 @@ android {
 
 dependencies {
 
+    // --- AndroidX UI
     implementation(libs.appcompat)
     implementation(libs.material)
     implementation(libs.activity)
     implementation(libs.constraintlayout)
+    // --- CameraX
     implementation(libs.cameraCore)
     implementation(libs.cameraLifecycle)
     implementation(libs.cameraView)
+    implementation(libs.cameraCamera2)
+    // --- Test
     testImplementation(libs.junit)
     androidTestImplementation(libs.ext.junit)
     androidTestImplementation(libs.espresso.core)
-    implementation(libs.appcompat)
-    implementation(libs.cameraCamera2)
+    // --- Google Play services: Fused Location
     implementation("com.google.android.gms:play-services-location:21.3.0")
+    // --- Core (for ContextCompat.registerReceiver, etc.)
+    implementation("androidx.core:core-ktx:1.13.1")
+
 
 }
