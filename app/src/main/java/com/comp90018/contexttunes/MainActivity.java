@@ -1,6 +1,7 @@
 package com.comp90018.contexttunes;
 
 import android.os.Bundle;
+import android.util.Log;
 import android.view.View;
 
 import androidx.activity.EdgeToEdge;
@@ -10,14 +11,24 @@ import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.fragment.app.Fragment;
 
+import com.comp90018.contexttunes.data.sensors.LightSensor;
 import com.comp90018.contexttunes.databinding.ActivityMainBinding;
 import com.comp90018.contexttunes.ui.home.HomeFragment;
 import com.comp90018.contexttunes.ui.playlist.PlaylistFragment;
 import com.comp90018.contexttunes.ui.snap.SnapFragment;
 
+import androidx.lifecycle.LiveData;
+import androidx.lifecycle.MutableLiveData;
+import com.comp90018.contexttunes.data.sensors.LightSensor.LightBucket;
+
 public class MainActivity extends AppCompatActivity {
 
     private ActivityMainBinding binding;
+
+    // Light sensor instance
+    private LightSensor lightSensor;
+    private final MutableLiveData<LightBucket> lightBucketLive = new MutableLiveData<>(LightBucket.UNKNOWN);
+    //public LiveData<LightBucket> getLightBucketLive() { return lightBucketLive; }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -73,6 +84,21 @@ public class MainActivity extends AppCompatActivity {
             return false;
         });
 
+        // Initialise LightSensor
+        lightSensor = new LightSensor(this, bucket -> {
+            Log.d("LightSensor", "Current light bucket = " + bucket);
+            lightBucketLive.postValue(bucket);
+        });
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        if (lightSensor != null) lightSensor.start();
+    }
+
+    @Override protected void onPause() {
+        if (lightSensor != null) lightSensor.stop();
+        super.onPause();
     }
 
     public void setBottomNavVisibility(boolean visible) {
@@ -86,5 +112,9 @@ public class MainActivity extends AppCompatActivity {
         binding.bottomNav.setSelectedItemId(R.id.nav_home);
     }
 
-
+    public void selectTab(int menuId) {
+        if (binding != null) {
+            binding.bottomNav.setSelectedItemId(menuId);
+        }
+    }
 }
