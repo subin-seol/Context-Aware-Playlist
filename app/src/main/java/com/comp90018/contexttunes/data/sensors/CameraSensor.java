@@ -118,4 +118,5 @@ public class CameraSensor {
             cameraProvider.unbindAll();
         }
     }
+
 }

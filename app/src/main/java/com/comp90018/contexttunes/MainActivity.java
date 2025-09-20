@@ -10,16 +10,14 @@ import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.fragment.app.Fragment;
+import androidx.lifecycle.MutableLiveData;
 
 import com.comp90018.contexttunes.data.sensors.LightSensor;
+import com.comp90018.contexttunes.data.sensors.LightSensor.LightBucket;
 import com.comp90018.contexttunes.databinding.ActivityMainBinding;
 import com.comp90018.contexttunes.ui.home.HomeFragment;
 import com.comp90018.contexttunes.ui.playlist.PlaylistFragment;
 import com.comp90018.contexttunes.ui.snap.SnapFragment;
-
-import androidx.lifecycle.LiveData;
-import androidx.lifecycle.MutableLiveData;
-import com.comp90018.contexttunes.data.sensors.LightSensor.LightBucket;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -29,6 +27,7 @@ public class MainActivity extends AppCompatActivity {
     private LightSensor lightSensor;
     private final MutableLiveData<LightBucket> lightBucketLive = new MutableLiveData<>(LightBucket.UNKNOWN);
     //public LiveData<LightBucket> getLightBucketLive() { return lightBucketLive; }
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -111,6 +110,12 @@ public class MainActivity extends AppCompatActivity {
         // This triggers the BottomNavigationView listener and loads HomeFragment
         binding.bottomNav.setSelectedItemId(R.id.nav_home);
     }
+
+    public void goToSnapTab() {
+        // This triggers the BottomNavigationView listener and loads HomeFragment
+        binding.bottomNav.setSelectedItemId(R.id.nav_snap);
+    }
+
 
     public void selectTab(int menuId) {
         if (binding != null) {

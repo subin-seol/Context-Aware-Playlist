@@ -1,22 +1,29 @@
 package com.comp90018.contexttunes.ui.snap;
 
+import android.content.Intent;
+import android.graphics.Bitmap;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 
+import androidx.activity.result.ActivityResultLauncher;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.camera.view.PreviewView;
 import androidx.fragment.app.Fragment;
+import androidx.lifecycle.ViewModelProvider;
 
 import com.comp90018.contexttunes.MainActivity;
 import com.comp90018.contexttunes.data.sensors.CameraSensor;
 import com.comp90018.contexttunes.databinding.FragmentSnapBinding;
+import com.comp90018.contexttunes.ui.viewModel.SharedCameraViewModel;
 
 public class SnapFragment extends Fragment {
+
     private FragmentSnapBinding binding;
     private CameraSensor cameraSensor;
+    // Activity result launcher for image picking
+    private ActivityResultLauncher<Intent> imagePickerLauncher;
 
     @Nullable
     @Override
@@ -30,63 +37,87 @@ public class SnapFragment extends Fragment {
     @Override
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
-        PreviewView previewView = binding.cameraPreview;
-        cameraSensor = new CameraSensor(requireContext(), previewView, getViewLifecycleOwner());
 
-        // Hide bottom nav bar when camera opens
+        SharedCameraViewModel viewModel = new ViewModelProvider(requireActivity())
+                .get(SharedCameraViewModel.class);
+
+        cameraSensor = new CameraSensor(requireContext(), binding.cameraPreview, getViewLifecycleOwner());
+
+        // Always hide nav bar when in snap fragment
         ((MainActivity) requireActivity()).setBottomNavVisibility(false);
-        // Call camera preview
+
+        // Determine initial UI state based on existing captured image
+        Bitmap existingBitmap = viewModel.getCapturedImage().getValue();
+        if (existingBitmap != null) {
+            // Post-capture UI
+            showCapturedUI(existingBitmap);
+        } else {
+            // Camera preview UI
+            showCameraUI();
+        }
+
+        // Observe captured image changes
+        viewModel.getCapturedImage().observe(getViewLifecycleOwner(), bitmap -> {
+            if (bitmap != null) {
+                // Post-capture UI
+                showCapturedUI(bitmap);
+            } else {
+                // Camera preview UI
+                showCameraUI();
+            }
+        });
+
+        // Capture button
+        binding.btnCapture.setOnClickListener(v -> cameraSensor.takePhoto(capturedBitmap -> {
+            viewModel.setCapturedImage(capturedBitmap);
+            showCapturedUI(capturedBitmap);
+        }));
+
+        // Retake button
+        binding.btnRetake.setOnClickListener(v -> {
+            viewModel.setCapturedImage(null);
+            showCameraUI();
+        });
+
+        // Generate button
+        binding.btnGenerate.setOnClickListener(v -> {
+            ((MainActivity) requireActivity()).goToHomeTab();
+        });
+
+        // Back button
+        binding.btnBack.setOnClickListener(v ->
+                ((MainActivity) requireActivity()).goToHomeTab()
+        );
+    }
+
+    private void showCameraUI() {
+        binding.cameraPreview.setVisibility(View.VISIBLE);
+//        binding.btnUpload.setVisibility(View.VISIBLE);
+        binding.imagePreview.setVisibility(View.GONE);
+        binding.btnCapture.setVisibility(View.VISIBLE);
+        binding.btnRetake.setVisibility(View.GONE);
+        binding.btnGenerate.setVisibility(View.GONE);
         cameraSensor.startCameraPreview();
 
-        // Add event listener for shutter button
-        binding.btnCapture.setOnClickListener(v -> {
-            cameraSensor.takePhoto(bitmap -> {
-                // Freeze preview and show captured image
-                binding.imagePreview.setImageBitmap(bitmap);
-                binding.cameraPreview.setVisibility(View.GONE);
-                binding.imagePreview.setVisibility(View.VISIBLE);
-                binding.btnCapture.setVisibility(View.GONE);
-                binding.btnRetake.setVisibility(View.VISIBLE);
-                binding.btnGenerate.setVisibility(View.VISIBLE);
-            });
-        });
+    }
 
-        // Add event listener for cancel button
-        binding.btnBack.setOnClickListener(v -> {
-            // Redirect to home tab
-            ((MainActivity) requireActivity()).goToHomeTab();
-        });
+    private void showCapturedUI(Bitmap bitmap) {
+        binding.imagePreview.setImageBitmap(bitmap);
+        binding.cameraPreview.setVisibility(View.GONE);
+        binding.imagePreview.setVisibility(View.VISIBLE);
+        binding.btnCapture.setVisibility(View.GONE);
+        binding.btnRetake.setVisibility(View.VISIBLE);
+        binding.btnGenerate.setVisibility(View.VISIBLE);
+//        binding.btnUpload.setVisibility(View.GONE);
+        cameraSensor.stopCameraPreview();
 
-        // Add event listener for retake button
-        binding.btnRetake.setOnClickListener(v -> {
-            // Show capture, hide retake & generate buttons
-            binding.btnCapture.setVisibility(View.VISIBLE);
-            binding.btnRetake.setVisibility(View.GONE);
-            binding.btnGenerate.setVisibility(View.GONE);
-
-            // Hide captured image
-            binding.imagePreview.setVisibility(View.GONE);
-
-            // Show live preview
-            binding.cameraPreview.setVisibility(View.VISIBLE);
-
-            // Restart camera preview
-            cameraSensor.startCameraPreview();
-        });
-
-        // Add event listener for generate playlist button
-        binding.btnGenerate.setOnClickListener(v2 -> {
-            // TODO: add generate playlist logic here
-            // redirect to homepage
-            ((MainActivity) requireActivity()).goToHomeTab();
-        });
     }
 
     @Override
     public void onDestroyView() {
         super.onDestroyView();
-        ((MainActivity) requireActivity()).setBottomNavVisibility(true);
         cameraSensor.stopCameraPreview();
+        ((MainActivity) requireActivity()).setBottomNavVisibility(true);
         binding = null;
     }
 }
