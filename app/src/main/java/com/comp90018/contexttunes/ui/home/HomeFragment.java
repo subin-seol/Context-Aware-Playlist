@@ -106,7 +106,6 @@ public class HomeFragment extends Fragment {
 
     private void checkAndRequestLocationPermission() {
         if (hasLocationPermission()) {
-            Toast.makeText(requireContext(), "Fetching weather data...", Toast.LENGTH_SHORT).show();
             fetchWeatherData();
         } else {
             Toast.makeText(requireContext(), "Requesting location permission for weather...", Toast.LENGTH_SHORT).show();
