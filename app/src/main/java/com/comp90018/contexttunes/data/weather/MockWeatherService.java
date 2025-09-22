@@ -6,6 +6,8 @@ import android.util.Log;
 import androidx.annotation.NonNull;
 
 import java.util.Random;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * Mock weather service for testing purposes when API key is not available.
@@ -23,14 +25,15 @@ public class MockWeatherService {
 
     private static final String TAG = "MockWeatherService";
     private final Random random = new Random();
+    private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
     public MockWeatherService(@NonNull Context context) {
         // Mock service doesn't need context
     }
 
     public void getCurrentWeather(@NonNull WeatherCallback callback) {
-        // Simulate network delay
-        new Thread(() -> {
+        // Simulate network delay using ExecutorService
+        executor.execute(() -> {
             try {
                 Thread.sleep(1000); // 1 second delay to simulate API call
 
@@ -45,7 +48,7 @@ public class MockWeatherService {
                 Log.e(TAG, "Mock weather service interrupted", e);
                 callback.onWeatherReceived(WeatherState.UNKNOWN);
             }
-        }).start();
+        });
     }
 
     public void shutdown() {
