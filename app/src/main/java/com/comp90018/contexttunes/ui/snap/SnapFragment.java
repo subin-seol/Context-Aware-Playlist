@@ -2,12 +2,15 @@ package com.comp90018.contexttunes.ui.snap;
 
 import android.content.Intent;
 import android.graphics.Bitmap;
+import android.net.Uri;
 import android.os.Bundle;
+import android.provider.MediaStore;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 
 import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
@@ -18,12 +21,42 @@ import com.comp90018.contexttunes.data.sensors.CameraSensor;
 import com.comp90018.contexttunes.databinding.FragmentSnapBinding;
 import com.comp90018.contexttunes.ui.viewModel.SharedCameraViewModel;
 
+import java.io.IOException;
+
 public class SnapFragment extends Fragment {
 
     private FragmentSnapBinding binding;
     private CameraSensor cameraSensor;
     // Activity result launcher for image picking
     private ActivityResultLauncher<Intent> imagePickerLauncher;
+
+    @Override
+    public void onCreate(@Nullable Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+
+        // Initialize the image picker launcher
+        imagePickerLauncher = registerForActivityResult(
+                new ActivityResultContracts.StartActivityForResult(),
+                result -> {
+                    if (result.getResultCode() == requireActivity().RESULT_OK && result.getData() != null) {
+                        Uri selectedImageUri = result.getData().getData();
+                        if (selectedImageUri != null) {
+                            try {
+                                Bitmap bitmap = MediaStore.Images.Media.getBitmap(
+                                        requireActivity().getContentResolver(), selectedImageUri);
+                                // Get viewModel instance since it might not be initialized yet
+                                SharedCameraViewModel vm = new ViewModelProvider(requireActivity())
+                                        .get(SharedCameraViewModel.class);
+                                vm.setCapturedImage(bitmap);
+                            } catch (IOException e) {
+                                e.printStackTrace();
+                            }
+                        }
+                    }
+                }
+        );
+    }
+
 
     @Nullable
     @Override
@@ -88,17 +121,22 @@ public class SnapFragment extends Fragment {
         binding.btnBack.setOnClickListener(v ->
                 ((MainActivity) requireActivity()).goToHomeTab()
         );
+
+        // Add upload button logic (uncomment if you have btnUpload)
+        binding.btnUpload.setOnClickListener(v -> {
+            Intent intent = new Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
+            imagePickerLauncher.launch(intent);
+        });
     }
 
     private void showCameraUI() {
         binding.cameraPreview.setVisibility(View.VISIBLE);
-//        binding.btnUpload.setVisibility(View.VISIBLE);
+        binding.btnUpload.setVisibility(View.VISIBLE);
         binding.imagePreview.setVisibility(View.GONE);
         binding.btnCapture.setVisibility(View.VISIBLE);
         binding.btnRetake.setVisibility(View.GONE);
         binding.btnGenerate.setVisibility(View.GONE);
         cameraSensor.startCameraPreview();
-
     }
 
     private void showCapturedUI(Bitmap bitmap) {
@@ -108,9 +146,8 @@ public class SnapFragment extends Fragment {
         binding.btnCapture.setVisibility(View.GONE);
         binding.btnRetake.setVisibility(View.VISIBLE);
         binding.btnGenerate.setVisibility(View.VISIBLE);
-//        binding.btnUpload.setVisibility(View.GONE);
+        binding.btnUpload.setVisibility(View.GONE);
         cameraSensor.stopCameraPreview();
-
     }
 
     @Override
