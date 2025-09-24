@@ -1,6 +1,10 @@
 package com.comp90018.contexttunes.ui.home;
 
+
 import android.location.Location;
+import android.Manifest;
+import android.content.pm.PackageManager;
+
 import android.os.Bundle;
 import android.util.Log;
 import android.view.LayoutInflater;
@@ -10,6 +14,8 @@ import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.ViewModelProvider;
 
@@ -19,6 +25,10 @@ import com.comp90018.contexttunes.MainActivity;
 import com.comp90018.contexttunes.R;
 import com.comp90018.contexttunes.data.api.GooglePlacesAPI;
 import com.comp90018.contexttunes.data.sensors.LocationSensor;
+import com.comp90018.contexttunes.data.weather.WeatherService;
+import com.comp90018.contexttunes.data.weather.WeatherService.WeatherState;
+import com.comp90018.contexttunes.data.weather.MockWeatherService;
+
 import com.comp90018.contexttunes.data.sensors.LightSensor;
 import com.comp90018.contexttunes.data.sensors.LightSensor.LightBucket;
 import com.comp90018.contexttunes.databinding.FragmentHomeBinding;
@@ -27,19 +37,25 @@ import com.comp90018.contexttunes.domain.Recommendation;
 import com.comp90018.contexttunes.domain.RuleEngine;
 import com.google.android.libraries.places.api.model.Place;
 import com.comp90018.contexttunes.ui.viewModel.SharedCameraViewModel;
+
 import com.comp90018.contexttunes.utils.PlaylistOpener;
 
 import java.util.List;
 
 public class HomeFragment extends Fragment {
     private static final String TAG = "HomeFragment";
+    private static final int LOCATION_PERMISSION_REQUEST_CODE = 100;
+
     private FragmentHomeBinding binding;
 
     private LightSensor lightSensor;
     private LocationSensor locationSensor;
-
-    private Recommendation currentRecommendation = null;
     private GooglePlacesAPI googlePlacesAPI;
+
+    private MockWeatherService mockWeatherService; // Using mock service for testing
+    private Recommendation currentRecommendation = null;
+    private WeatherState currentWeather = WeatherState.UNKNOWN;
+    private LightBucket currentLightBucket = LightBucket.UNKNOWN;
 
     @Nullable
     @Override
@@ -57,36 +73,38 @@ public class HomeFragment extends Fragment {
         SharedCameraViewModel viewModel = new ViewModelProvider(requireActivity()).get(SharedCameraViewModel.class);
 
         // username could come from prefs later
-        binding.welcomeTitle.setText("Welcome back Alex!");
+        binding.welcomeTitle.setText("Welcome back!");
+
+        // Initialize weather status
+        updateWeatherStatus(WeatherState.UNKNOWN);
 
         // --- LIGHT SENSOR WIRING ---
         lightSensor = new LightSensor(requireContext(), bucket -> {
             if (binding == null) return;
             requireActivity().runOnUiThread(() -> {
-                String label;
-                switch (bucket) {
-                    case DIM:
-                        label = "Light: Dim";
-                        break;
-                    case NORMAL:
-                        label = "Light: Normal";
-                        break;
-                    case BRIGHT:
-                        label = "Light: Bright";
-                        break;
-                    default:
-                        label = "Light: N/A";
-                }
-                binding.lightValue.setText(label);
-
+                // Update light sensor display
+                updateLightStatus(bucket);
                 // Update recommendation when light changes
                 updateRecommendation(bucket);
             });
         });
 
-        // --- LOCATION SENSOR SETUP ---
+        // --- LIGHT SENSOR ---
+        lightSensor = new LightSensor(requireContext(), bucket -> {
+            if (binding == null) return;
+            requireActivity().runOnUiThread(() -> {
+                updateLightStatus(bucket);
+                updateRecommendation(bucket);
+            });
+        });
+
+        // --- LOCATION SENSOR + PLACES API ---
         locationSensor = new LocationSensor(requireActivity());
         googlePlacesAPI = new GooglePlacesAPI(requireContext(), BuildConfig.PLACES_API_KEY);
+
+        // --- WEATHER SERVICE ---
+        mockWeatherService = new MockWeatherService(requireContext());
+        checkAndRequestLocationPermission(); // Handles permission + weather fetch
 
         // Camera button -> switch to Snap tab
         binding.btnSnap.setOnClickListener(v -> {
@@ -136,22 +154,125 @@ public class HomeFragment extends Fragment {
         });
     }
 
-    private void updateRecommendation(LightBucket lightBucket) {
-        // Create current context by combining sensor data
-        String timeOfDay = RuleEngine.getCurrentTimeOfDay();
-        String activity = "still"; // Mock data for now
-        Context context = new Context(lightBucket, timeOfDay, activity);
 
-        // Get rec from rule engine
-        Recommendation recommendation = RuleEngine.getRecommendation(context);
-
-        // Update UI
-        binding.welcomeSubtitle.setText(recommendation.reason);
-
-        // Store for GO button
-        currentRecommendation = recommendation;
+      // --- WEATHER / PERMISSIONS ---
+      private void checkAndRequestLocationPermission() {
+        if (hasLocationPermission()) {
+            fetchWeatherData();
+        } else {
+            Toast.makeText(requireContext(), "Requesting location permission for weather...", Toast.LENGTH_SHORT).show();
+            requestLocationPermission();
+        }
+    }
+  
+    private boolean hasLocationPermission() {
+        return ContextCompat.checkSelfPermission(requireContext(),
+                Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
     }
 
+    private void requestLocationPermission() {
+        ActivityCompat.requestPermissions(requireActivity(),
+                new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
+                LOCATION_PERMISSION_REQUEST_CODE);
+    }
+
+    private void fetchWeatherData() {
+        Toast.makeText(requireContext(), "Fetching weather data...", Toast.LENGTH_SHORT).show();
+
+        // Fetch initial weather data using mock service
+        mockWeatherService.getCurrentWeather(mockWeather -> {
+            // Convert MockWeatherService enum to WeatherService enum
+            WeatherService.WeatherState convertedWeather;
+            switch (mockWeather) {
+                case SUNNY:
+                    convertedWeather = WeatherService.WeatherState.SUNNY;
+                    break;
+                case CLOUDY:
+                    convertedWeather = WeatherService.WeatherState.CLOUDY;
+                    break;
+                case RAINY:
+                    convertedWeather = WeatherService.WeatherState.RAINY;
+                    break;
+                case UNKNOWN:
+                default:
+                    convertedWeather = WeatherService.WeatherState.UNKNOWN;
+                    break;
+            }
+
+            currentWeather = convertedWeather;
+            requireActivity().runOnUiThread(() -> {
+                String debugMessage = "Weather received: " + convertedWeather.toString();
+                Toast.makeText(requireContext(), debugMessage, Toast.LENGTH_SHORT).show();
+
+                // Update recommendation with new weather data
+                updateRecommendation(null); // null means use current light sensor value
+                updateWeatherStatus(currentWeather);
+            });
+        });
+    }
+  
+  
+      // --- RECOMMENDATION ---
+      private void updateRecommendation(@Nullable LightBucket lightBucket) {
+        if (lightBucket != null) currentLightBucket = lightBucket;
+
+        String timeOfDay = RuleEngine.getCurrentTimeOfDay();
+        String activity = "still"; // mock
+        Context context = new Context(currentLightBucket, timeOfDay, activity, currentWeather);
+
+        Recommendation recommendation = RuleEngine.getRecommendation(context);
+        binding.welcomeSubtitle.setText(recommendation.reason);
+        currentRecommendation = recommendation;
+    }
+  
+  // --- LIGHT & WEATHER UI
+  private void updateWeatherStatus(WeatherState weather) {
+        if (binding == null) return;
+
+        String weatherText;
+        switch (weather) {
+            case SUNNY:
+                weatherText = "Weather: ☀️ Sunny";
+                break;
+            case CLOUDY:
+                weatherText = "Weather: ☁️ Cloudy";
+                break;
+            case RAINY:
+                weatherText = "Weather: 🌧️ Rainy";
+                break;
+            case UNKNOWN:
+            default:
+                weatherText = "Weather: —";
+                break;
+        }
+
+        binding.weatherStatus.setText(weatherText);
+    }
+
+    private void updateLightStatus(LightBucket bucket) {
+        if (binding == null) return;
+
+        String lightText;
+        switch (bucket) {
+            case DIM:
+                lightText = "Light: 🌒 Dim";
+                break;
+            case NORMAL:
+                lightText = "Light: 🌗 Normal";
+                break;
+            case BRIGHT:
+                lightText = "Light: 🌕 Bright";
+                break;
+            case UNKNOWN:
+            default:
+                lightText = "Light: —";
+                break;
+        }
+
+        binding.lightValue.setText(lightText);
+    }
+
+    // --- PLACES ---
     private void fetchNearbyPlaces(Location location) {
         googlePlacesAPI.getNearbyPlaces(location, 300, new GooglePlacesAPI.NearbyPlacesCallback() {
             @Override
@@ -190,7 +311,25 @@ public class HomeFragment extends Fragment {
         });
     }
 
-    // Small helper to print nicer bucket names
+    
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+
+        if (requestCode == LOCATION_PERMISSION_REQUEST_CODE) {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                // Permission granted, fetch weather data
+                fetchWeatherData();
+            } else {
+                // Permission denied, show fallback message
+                updateWeatherStatus(WeatherState.UNKNOWN);
+                Toast.makeText(requireContext(), "Location permission needed for weather updates", Toast.LENGTH_SHORT).show();
+            }
+        }
+    }
+  
+  // Small helper to print nicer bucket names
     private String pretty(LightBucket b) {
         if (b == null) return "N/A";
         switch (b) {
@@ -198,8 +337,6 @@ public class HomeFragment extends Fragment {
             case NORMAL: return "Normal";
             case BRIGHT: return "Bright";
             default: return "N/A";
-        }
-    }
 
     @Override
     public void onStart() {
@@ -215,6 +352,9 @@ public class HomeFragment extends Fragment {
 
     @Override
     public void onDestroyView() {
+        if (mockWeatherService != null) {
+            mockWeatherService.shutdown();
+        }
         super.onDestroyView();
         binding = null;
     }
