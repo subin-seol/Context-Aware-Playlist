@@ -22,7 +22,6 @@ import androidx.lifecycle.ViewModelProvider;
 import com.comp90018.contexttunes.BuildConfig;
 import com.comp90018.contexttunes.MainActivity;
 
-import com.comp90018.contexttunes.R;
 import com.comp90018.contexttunes.data.api.GooglePlacesAPI;
 import com.comp90018.contexttunes.data.sensors.LocationSensor;
 import com.comp90018.contexttunes.data.weather.WeatherService;
@@ -297,35 +296,21 @@ public class HomeFragment extends Fragment {
         });
     }
 
-    // Forward permission results to LocationSensor
-    @Override
-    public void onRequestPermissionsResult(int requestCode,
-                                           @NonNull String[] permissions,
-                                           @NonNull int[] grantResults) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-
-        locationSensor.handlePermissionResult(requestCode, grantResults, location -> {
-            if (location != null) {
-                fetchNearbyPlaces(location);
-            }
-        });
-    }
-
-    
-
+    // --- PERMISSION CALLBACK ---
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
 
         if (requestCode == LOCATION_PERMISSION_REQUEST_CODE) {
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                // Permission granted, fetch weather data
                 fetchWeatherData();
             } else {
-                // Permission denied, show fallback message
                 updateWeatherStatus(WeatherState.UNKNOWN);
                 Toast.makeText(requireContext(), "Location permission needed for weather updates", Toast.LENGTH_SHORT).show();
             }
+        } else {
+            // Forward to LocationSensor for places API permissions
+            locationSensor.handlePermissionResult(requestCode, grantResults, this::fetchNearbyPlaces);
         }
     }
   
@@ -333,10 +318,16 @@ public class HomeFragment extends Fragment {
     private String pretty(LightBucket b) {
         if (b == null) return "N/A";
         switch (b) {
-            case DIM: return "Dim";
-            case NORMAL: return "Normal";
-            case BRIGHT: return "Bright";
-            default: return "N/A";
+            case DIM:
+                return "Dim";
+            case NORMAL:
+                return "Normal";
+            case BRIGHT:
+                return "Bright";
+            default:
+                return "N/A";
+        }
+    }
 
     @Override
     public void onStart() {
