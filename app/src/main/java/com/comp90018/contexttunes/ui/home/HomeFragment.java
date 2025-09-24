@@ -1,8 +1,12 @@
 package com.comp90018.contexttunes.ui.home;
 
+
+import android.location.Location;
 import android.Manifest;
 import android.content.pm.PackageManager;
+
 import android.os.Bundle;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -15,7 +19,11 @@ import androidx.core.content.ContextCompat;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.ViewModelProvider;
 
+import com.comp90018.contexttunes.BuildConfig;
 import com.comp90018.contexttunes.MainActivity;
+
+import com.comp90018.contexttunes.data.api.GooglePlacesAPI;
+import com.comp90018.contexttunes.data.sensors.LocationSensor;
 import com.comp90018.contexttunes.data.weather.WeatherService;
 import com.comp90018.contexttunes.data.weather.WeatherService.WeatherState;
 import com.comp90018.contexttunes.data.weather.MockWeatherService;
@@ -26,22 +34,26 @@ import com.comp90018.contexttunes.databinding.FragmentHomeBinding;
 import com.comp90018.contexttunes.domain.Context;
 import com.comp90018.contexttunes.domain.Recommendation;
 import com.comp90018.contexttunes.domain.RuleEngine;
+import com.google.android.libraries.places.api.model.Place;
 import com.comp90018.contexttunes.ui.viewModel.SharedCameraViewModel;
 
 import com.comp90018.contexttunes.utils.PlaylistOpener;
 
-public class HomeFragment extends Fragment {
+import java.util.List;
 
+public class HomeFragment extends Fragment {
+    private static final String TAG = "HomeFragment";
     private static final int LOCATION_PERMISSION_REQUEST_CODE = 100;
 
     private FragmentHomeBinding binding;
 
     private LightSensor lightSensor;
+    private LocationSensor locationSensor;
+    private GooglePlacesAPI googlePlacesAPI;
+
     private MockWeatherService mockWeatherService; // Using mock service for testing
-
     private Recommendation currentRecommendation = null;
-    private WeatherService.WeatherState currentWeather = WeatherService.WeatherState.UNKNOWN;
-
+    private WeatherState currentWeather = WeatherState.UNKNOWN;
     private LightBucket currentLightBucket = LightBucket.UNKNOWN;
 
     @Nullable
@@ -76,12 +88,22 @@ public class HomeFragment extends Fragment {
             });
         });
 
-        // --- WEATHER SERVICE WIRING ---
+        // --- LIGHT SENSOR ---
+        lightSensor = new LightSensor(requireContext(), bucket -> {
+            if (binding == null) return;
+            requireActivity().runOnUiThread(() -> {
+                updateLightStatus(bucket);
+                updateRecommendation(bucket);
+            });
+        });
+
+        // --- LOCATION SENSOR + PLACES API ---
+        locationSensor = new LocationSensor(requireActivity());
+        googlePlacesAPI = new GooglePlacesAPI(requireContext(), BuildConfig.PLACES_API_KEY);
+
+        // --- WEATHER SERVICE ---
         mockWeatherService = new MockWeatherService(requireContext());
-
-        // Check location permission and request if needed
-        checkAndRequestLocationPermission();
-
+        checkAndRequestLocationPermission(); // Handles permission + weather fetch
 
         // Camera button -> switch to Snap tab
         binding.btnSnap.setOnClickListener(v -> {
@@ -118,16 +140,39 @@ public class HomeFragment extends Fragment {
             }
         });
 
-
+        // Button to fetch places
+        binding.btnFetchPlaces.setOnClickListener(v -> {
+            locationSensor.getCurrentLocation(location -> {
+                if (location != null) {
+                    Log.d(TAG, "Got location: " + location.getLatitude() + ", " + location.getLongitude());
+                    fetchNearbyPlaces(location);
+                } else {
+                    Toast.makeText(requireContext(), "No location found", Toast.LENGTH_SHORT).show();
+                }
+            });
+        });
     }
 
-    private void checkAndRequestLocationPermission() {
+
+      // --- WEATHER / PERMISSIONS ---
+      private void checkAndRequestLocationPermission() {
         if (hasLocationPermission()) {
             fetchWeatherData();
         } else {
             Toast.makeText(requireContext(), "Requesting location permission for weather...", Toast.LENGTH_SHORT).show();
             requestLocationPermission();
         }
+    }
+  
+    private boolean hasLocationPermission() {
+        return ContextCompat.checkSelfPermission(requireContext(),
+                Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private void requestLocationPermission() {
+        ActivityCompat.requestPermissions(requireActivity(),
+                new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
+                LOCATION_PERMISSION_REQUEST_CODE);
     }
 
     private void fetchWeatherData() {
@@ -164,42 +209,23 @@ public class HomeFragment extends Fragment {
             });
         });
     }
+  
+  
+      // --- RECOMMENDATION ---
+      private void updateRecommendation(@Nullable LightBucket lightBucket) {
+        if (lightBucket != null) currentLightBucket = lightBucket;
 
-    private void requestLocationPermission() {
-        // Request location permission
-        ActivityCompat.requestPermissions(requireActivity(),
-                new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
-                LOCATION_PERMISSION_REQUEST_CODE);
-    }
-
-    private boolean hasLocationPermission() {
-        // Check if location permission is granted
-        return ContextCompat.checkSelfPermission(requireContext(),
-                Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
-    }
-
-    private void updateRecommendation(@Nullable LightBucket lightBucket) {
-        // Update current light bucket if provided
-        if (lightBucket != null) {
-            currentLightBucket = lightBucket;
-        }
-
-        // Create current context by combining all available data
         String timeOfDay = RuleEngine.getCurrentTimeOfDay();
-        String activity = "still"; // Mock data for now
+        String activity = "still"; // mock
         Context context = new Context(currentLightBucket, timeOfDay, activity, currentWeather);
 
-        // Get rec from rule engine
         Recommendation recommendation = RuleEngine.getRecommendation(context);
-
-        // Update UI
         binding.welcomeSubtitle.setText(recommendation.reason);
-
-        // Store for GO button
         currentRecommendation = recommendation;
     }
-
-    private void updateWeatherStatus(WeatherState weather) {
+  
+  // --- LIGHT & WEATHER UI
+  private void updateWeatherStatus(WeatherState weather) {
         if (binding == null) return;
 
         String weatherText;
@@ -245,19 +271,61 @@ public class HomeFragment extends Fragment {
         binding.lightValue.setText(lightText);
     }
 
+    // --- PLACES ---
+    private void fetchNearbyPlaces(Location location) {
+        googlePlacesAPI.getNearbyPlaces(location, 300, new GooglePlacesAPI.NearbyPlacesCallback() {
+            @Override
+            public void onPlacesFound(List<Place> places) {
+                if (places.isEmpty()) {
+                    Toast.makeText(requireContext(), "No nearby places found", Toast.LENGTH_SHORT).show();
+                } else {
+                    for (Place place : places) {
+                        Log.d(TAG, "Found place: " + place.getDisplayName()
+                                + " (" + place.getPrimaryType() + ")");
+                    }
+                    Toast.makeText(requireContext(),
+                            "Found " + places.size() + " places", Toast.LENGTH_SHORT).show();
+                }
+            }
+
+            @Override
+            public void onError(Exception e) {
+                Log.e(TAG, "Places API error", e);
+                Toast.makeText(requireContext(), "Places API error", Toast.LENGTH_SHORT).show();
+            }
+        });
+    }
+
+    // --- PERMISSION CALLBACK ---
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
 
         if (requestCode == LOCATION_PERMISSION_REQUEST_CODE) {
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                // Permission granted, fetch weather data
                 fetchWeatherData();
             } else {
-                // Permission denied, show fallback message
                 updateWeatherStatus(WeatherState.UNKNOWN);
                 Toast.makeText(requireContext(), "Location permission needed for weather updates", Toast.LENGTH_SHORT).show();
             }
+        } else {
+            // Forward to LocationSensor for places API permissions
+            locationSensor.handlePermissionResult(requestCode, grantResults, this::fetchNearbyPlaces);
+        }
+    }
+  
+  // Small helper to print nicer bucket names
+    private String pretty(LightBucket b) {
+        if (b == null) return "N/A";
+        switch (b) {
+            case DIM:
+                return "Dim";
+            case NORMAL:
+                return "Normal";
+            case BRIGHT:
+                return "Bright";
+            default:
+                return "N/A";
         }
     }
 
