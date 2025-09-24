@@ -123,10 +123,6 @@ public class HomeFragment extends Fragment {
             }
         });
 
-
-    }
-
-
         // Button to fetch places
         binding.btnFetchPlaces.setOnClickListener(v -> {
             locationSensor.getCurrentLocation(location -> {
