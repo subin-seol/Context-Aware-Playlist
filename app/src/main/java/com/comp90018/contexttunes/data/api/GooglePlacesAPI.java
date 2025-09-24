@@ -42,6 +42,7 @@ public class GooglePlacesAPI {
     public void getNearbyPlaces(Location location, int radius, NearbyPlacesCallback callback) {
         if (placesClient == null) {
             Log.e("GooglePlacesAPI", "Places client not initialized");
+            callback.onError(new IllegalStateException("Places client not initialized"));
             return;
         }
 
