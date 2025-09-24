@@ -9,22 +9,17 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
+import androidx.lifecycle.ViewModelProvider;
 
 import com.comp90018.contexttunes.MainActivity;
-import com.comp90018.contexttunes.databinding.FragmentHomeBinding;
-import com.comp90018.contexttunes.R;
-
-import android.widget.TextView;
-import java.util.Locale;
 import com.comp90018.contexttunes.data.sensors.LightSensor;
 import com.comp90018.contexttunes.data.sensors.LightSensor.LightBucket;
-
-import com.comp90018.contexttunes.domain.Playlist;
-import com.comp90018.contexttunes.utils.PlaylistOpener;
-
+import com.comp90018.contexttunes.databinding.FragmentHomeBinding;
 import com.comp90018.contexttunes.domain.Context;
 import com.comp90018.contexttunes.domain.Recommendation;
 import com.comp90018.contexttunes.domain.RuleEngine;
+import com.comp90018.contexttunes.ui.viewModel.SharedCameraViewModel;
+import com.comp90018.contexttunes.utils.PlaylistOpener;
 
 public class HomeFragment extends Fragment {
 
@@ -46,6 +41,9 @@ public class HomeFragment extends Fragment {
     @Override
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
+
+        // Get the shared ViewModel
+        SharedCameraViewModel viewModel = new ViewModelProvider(requireActivity()).get(SharedCameraViewModel.class);
 
         // username could come from prefs later
         binding.welcomeTitle.setText("Welcome back Alex!");
@@ -78,16 +76,8 @@ public class HomeFragment extends Fragment {
 
         // Camera button -> switch to Snap tab
         binding.btnSnap.setOnClickListener(v -> {
-            MainActivity act = (MainActivity) requireActivity();
-            act.goToHomeTab(); // ensures listener exists
-            // directly set selected tab:
-            // R.id.nav_snap is your menu id in BottomNavigationView
-            ((MainActivity) requireActivity()).selectTab(R.id.nav_snap);
-            // simpler: call through MainActivity if you add a helper; for now:
-            act.runOnUiThread(() ->
-                    ((MainActivity) requireActivity()).selectTab(R.id.nav_snap)
-
-            );
+            // Use MainActivity's method to navigate to snap tab properly
+            ((MainActivity) requireActivity()).goToSnapTab();
         });
 
         // GO button -> trigger recommendation
@@ -99,6 +89,27 @@ public class HomeFragment extends Fragment {
                 Toast.makeText(requireContext(), "Generating your vibe…", Toast.LENGTH_SHORT).show();
             }
         });
+
+        // Add listener for image preview button
+        binding.btnPreviewImage.setOnClickListener(v -> {
+            // Navigate to snap tab which will show the captured image with retake/generate buttons
+            ((MainActivity) requireActivity()).goToSnapTab();
+        });
+
+        // Observe if there is a captured image
+        viewModel.getCapturedImage().observe(getViewLifecycleOwner(),bitmap ->{
+            if (bitmap != null){
+                // Update Snap button with an image icon
+                binding.btnSnap.setVisibility(View.GONE);
+                binding.btnPreviewImage.setVisibility(View.VISIBLE);
+            } else {
+                // Show camera button when no image
+                binding.btnSnap.setVisibility(View.VISIBLE);
+                binding.btnPreviewImage.setVisibility(View.GONE);
+            }
+        });
+
+
     }
 
 
