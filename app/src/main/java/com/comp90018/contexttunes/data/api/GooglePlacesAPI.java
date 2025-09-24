@@ -20,8 +20,7 @@ public class GooglePlacesAPI {
 
     public GooglePlacesAPI(Context context, String apiKey) {
         if (apiKey == null || apiKey.isEmpty() || apiKey.equals("DEFAULT_API_KEY")) {
-            Log.e("GooglePlacesAPI", "No API key provided");
-            return;
+            throw new IllegalArgumentException("No valid API key provided to GooglePlacesAPI");
         }
 
         if (!Places.isInitialized()) {
