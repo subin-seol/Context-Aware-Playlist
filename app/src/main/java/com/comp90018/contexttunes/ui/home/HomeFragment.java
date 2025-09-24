@@ -38,8 +38,6 @@ public class HomeFragment extends Fragment {
     private Recommendation currentRecommendation = null;
     private GooglePlacesAPI googlePlacesAPI;
 
-    private static final String PLACES_API_KEY = BuildConfig.PLACES_API_KEY;
-
     @Nullable
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container,
@@ -82,7 +80,7 @@ public class HomeFragment extends Fragment {
 
         // --- LOCATION SENSOR SETUP ---
         locationSensor = new LocationSensor(requireActivity());
-        googlePlacesAPI = new GooglePlacesAPI(requireContext(), PLACES_API_KEY);
+        googlePlacesAPI = new GooglePlacesAPI(requireContext(), BuildConfig.PLACES_API_KEY);
 
         // Camera button -> switch to Snap tab
         binding.btnSnap.setOnClickListener(v -> {
