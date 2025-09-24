@@ -21,8 +21,9 @@
 # OS files
 .DS_Store
 
-# Local configuration (SDK paths)
+# Local configuration (SDK paths and secrets)
 local.properties
+secrets.properties
 
 # Ignore accidental shell command files
 git config --global credential.helper*

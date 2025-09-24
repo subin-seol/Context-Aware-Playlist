@@ -284,5 +284,11 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
+        <Button
+            android:id="@+id/btn_fetch_places"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Fetch Nearby Places" />
+
     </LinearLayout>
 </androidx.core.widget.NestedScrollView>

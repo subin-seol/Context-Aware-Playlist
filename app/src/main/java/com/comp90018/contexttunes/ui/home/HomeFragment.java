@@ -1,6 +1,8 @@
 package com.comp90018.contexttunes.ui.home;
 
+import android.location.Location;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -10,30 +12,33 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 
+import com.comp90018.contexttunes.BuildConfig;
 import com.comp90018.contexttunes.MainActivity;
-import com.comp90018.contexttunes.databinding.FragmentHomeBinding;
 import com.comp90018.contexttunes.R;
-
-import android.widget.TextView;
-import java.util.Locale;
+import com.comp90018.contexttunes.data.api.GooglePlacesAPI;
 import com.comp90018.contexttunes.data.sensors.LightSensor;
 import com.comp90018.contexttunes.data.sensors.LightSensor.LightBucket;
-
-import com.comp90018.contexttunes.domain.Playlist;
-import com.comp90018.contexttunes.utils.PlaylistOpener;
-
+import com.comp90018.contexttunes.data.sensors.LocationSensor;
+import com.comp90018.contexttunes.databinding.FragmentHomeBinding;
 import com.comp90018.contexttunes.domain.Context;
 import com.comp90018.contexttunes.domain.Recommendation;
 import com.comp90018.contexttunes.domain.RuleEngine;
+import com.comp90018.contexttunes.utils.PlaylistOpener;
+import com.google.android.libraries.places.api.model.Place;
+
+import java.util.List;
 
 public class HomeFragment extends Fragment {
-
+    private static final String TAG = "HomeFragment";
     private FragmentHomeBinding binding;
 
     private LightSensor lightSensor;
-
+    private LocationSensor locationSensor;
 
     private Recommendation currentRecommendation = null;
+    private GooglePlacesAPI googlePlacesAPI;
+
+    private static final String PLACES_API_KEY = BuildConfig.PLACES_API_KEY;
 
     @Nullable
     @Override
@@ -75,6 +80,9 @@ public class HomeFragment extends Fragment {
             });
         });
 
+        // --- LOCATION SENSOR SETUP ---
+        locationSensor = new LocationSensor(requireActivity());
+        googlePlacesAPI = new GooglePlacesAPI(requireContext(), PLACES_API_KEY);
 
         // Camera button -> switch to Snap tab
         binding.btnSnap.setOnClickListener(v -> {
@@ -99,9 +107,19 @@ public class HomeFragment extends Fragment {
                 Toast.makeText(requireContext(), "Generating your vibe…", Toast.LENGTH_SHORT).show();
             }
         });
+
+        // Button to fetch places
+        binding.btnFetchPlaces.setOnClickListener(v -> {
+            locationSensor.getCurrentLocation(location -> {
+                if (location != null) {
+                    Log.d(TAG, "Got location: " + location.getLatitude() + ", " + location.getLongitude());
+                    fetchNearbyPlaces(location);
+                } else {
+                    Toast.makeText(requireContext(), "No location found", Toast.LENGTH_SHORT).show();
+                }
+            });
+        });
     }
-
-
 
     private void updateRecommendation(LightBucket lightBucket) {
         // Create current context by combining sensor data
@@ -119,15 +137,43 @@ public class HomeFragment extends Fragment {
         currentRecommendation = recommendation;
     }
 
+    private void fetchNearbyPlaces(Location location) {
+        googlePlacesAPI.getNearbyPlaces(location, 300, new GooglePlacesAPI.NearbyPlacesCallback() {
+            @Override
+            public void onPlacesFound(List<Place> places) {
+                if (places.isEmpty()) {
+                    Toast.makeText(requireContext(), "No nearby places found", Toast.LENGTH_SHORT).show();
+                } else {
+                    for (Place place : places) {
+                        Log.d(TAG, "Found place: " + place.getDisplayName()
+                                + " (" + place.getPrimaryType() + ")");
+                    }
+                    Toast.makeText(requireContext(),
+                            "Found " + places.size() + " places", Toast.LENGTH_SHORT).show();
+                }
+            }
 
+            @Override
+            public void onError(Exception e) {
+                Log.e(TAG, "Places API error", e);
+                Toast.makeText(requireContext(), "Places API error", Toast.LENGTH_SHORT).show();
+            }
+        });
+    }
 
+    // Forward permission results to LocationSensor
+    @Override
+    public void onRequestPermissionsResult(int requestCode,
+                                           @NonNull String[] permissions,
+                                           @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
 
-
-
-
-
-
-
+        locationSensor.handlePermissionResult(requestCode, grantResults, location -> {
+            if (location != null) {
+                fetchNearbyPlaces(location);
+            }
+        });
+    }
 
     // Small helper to print nicer bucket names
     private String pretty(LightBucket b) {
