@@ -133,6 +133,21 @@
                     app:iconTint="@color/text_primary"
                     app:rippleColor="@color/divider_8" />
 
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnPreviewImage"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="40dp"
+                    android:text="View Image"
+                    android:textAllCaps="false"
+                    android:textColor="@color/text_primary"
+                    app:cornerRadius="14dp"
+                    app:strokeColor="@color/text_secondary"
+                    app:strokeWidth="1dp"
+                    app:iconTint="@color/text_primary"
+                    app:rippleColor="@color/divider_8"
+                    android:visibility="gone"/>
+
                 <Space
                     android:layout_width="@dimen/space_12"
                     android:layout_height="0dp" />
