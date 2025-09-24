@@ -19,6 +19,8 @@ import java.net.URL;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import com.comp90018.contexttunes.BuildConfig;
+
 /**
  * Provides current weather conditions as simple states: SUNNY, CLOUDY, RAINY.
  * Uses OpenWeatherMap API for weather data.
@@ -34,7 +36,8 @@ public class WeatherService {
     }
 
     private static final String TAG = "WeatherService";
-    private static final String API_KEY = "your_openweather_api_key_here"; // Replace with actual API key
+    // Read API key from BuildConfig, or default to empty string
+    private final String apiKey = getApiKey();
     private static final String BASE_URL = "https://api.openweathermap.org/data/2.5/weather";
 
     private final Context context;
@@ -43,6 +46,21 @@ public class WeatherService {
     public WeatherService(@NonNull Context context) {
         this.context = context.getApplicationContext();
         this.executor = Executors.newSingleThreadExecutor();
+    }
+
+    private String getApiKey() {
+        // BuildConfig.OPENWEATHER_API_KEY is set in build.gradle
+        try {
+            String key = BuildConfig.OPENWEATHER_API_KEY;
+            if (key == null || key.isEmpty()) {
+                Log.w(TAG, "OpenWeatherMap API key missing! Using default key.");
+                return "your_default_api_key_here"; // replace with dummy/default if needed
+            }
+            return key;
+        } catch (Exception e) {
+            Log.w(TAG, "Error reading API key from BuildConfig. Using default key.", e);
+            return "your_default_api_key_here";
+        }
     }
 
     public void getCurrentWeather(@NonNull WeatherCallback callback) {
@@ -86,7 +104,7 @@ public class WeatherService {
     @NonNull
     private WeatherState fetchWeatherFromAPI(double lat, double lon) {
         try {
-            String urlString = String.format("%s?lat=%f&lon=%f&appid=%s", BASE_URL, lat, lon, API_KEY);
+            String urlString = String.format("%s?lat=%f&lon=%f&appid=%s", BASE_URL, lat, lon, apiKey);
             URL url = new URL(urlString);
 
             HttpURLConnection connection = (HttpURLConnection) url.openConnection();
