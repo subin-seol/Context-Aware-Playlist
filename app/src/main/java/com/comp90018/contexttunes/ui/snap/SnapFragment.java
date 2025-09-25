@@ -21,7 +21,7 @@ import com.comp90018.contexttunes.MainActivity;
 import com.comp90018.contexttunes.data.sensors.CameraSensor;
 import com.comp90018.contexttunes.databinding.FragmentSnapBinding;
 import com.comp90018.contexttunes.services.ImageAnalyser;
-import com.comp90018.contexttunes.ui.viewModel.SharedCameraViewModel;
+import com.comp90018.contexttunes.data.viewModel.ImageViewModel;
 
 import java.io.IOException;
 
@@ -47,8 +47,8 @@ public class SnapFragment extends Fragment {
                                 Bitmap bitmap = MediaStore.Images.Media.getBitmap(
                                         requireActivity().getContentResolver(), selectedImageUri);
                                 // Get viewModel instance since it might not be initialized yet
-                                SharedCameraViewModel vm = new ViewModelProvider(requireActivity())
-                                        .get(SharedCameraViewModel.class);
+                                ImageViewModel vm = new ViewModelProvider(requireActivity())
+                                        .get(ImageViewModel.class);
                                 vm.setCapturedImage(bitmap);
                             } catch (IOException e) {
                                 e.printStackTrace();
@@ -73,8 +73,8 @@ public class SnapFragment extends Fragment {
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
 
-        SharedCameraViewModel viewModel = new ViewModelProvider(requireActivity())
-                .get(SharedCameraViewModel.class);
+        ImageViewModel viewModel = new ViewModelProvider(requireActivity())
+                .get(ImageViewModel.class);
 
         cameraSensor = new CameraSensor(requireContext(), binding.cameraPreview, getViewLifecycleOwner());
 

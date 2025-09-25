@@ -31,7 +31,7 @@ import com.comp90018.contexttunes.databinding.FragmentHomeBinding;
 import com.comp90018.contexttunes.domain.Context;
 import com.comp90018.contexttunes.domain.Recommendation;
 import com.comp90018.contexttunes.domain.RuleEngine;
-import com.comp90018.contexttunes.ui.viewModel.SharedCameraViewModel;
+import com.comp90018.contexttunes.data.viewModel.ImageViewModel;
 import com.comp90018.contexttunes.utils.PlaylistOpener;
 import com.google.android.libraries.places.api.model.Place;
 
@@ -65,7 +65,7 @@ public class HomeFragment extends Fragment {
         super.onViewCreated(view, savedInstanceState);
 
         // Get the shared ViewModel
-        SharedCameraViewModel viewModel = new ViewModelProvider(requireActivity()).get(SharedCameraViewModel.class);
+        ImageViewModel viewModel = new ViewModelProvider(requireActivity()).get(ImageViewModel.class);
 
         // username could come from prefs later
         binding.welcomeTitle.setText("Welcome back!");
