@@ -25,8 +25,6 @@ cameraCore = { group = "androidx.camera", name = "camera-core", version.ref = "c
 cameraLifecycle = { group = "androidx.camera", name = "camera-lifecycle", version.ref = "cameraLifecycle" }
 cameraView = { group = "androidx.camera", name = "camera-view", version.ref = "cameraView" }
 cameraCamera2 = { group = "androidx.camera", name = "camera-camera2", version.ref = "cameraCamera2" }
-mlkit = { group = "com.google.mlkit", name = "image-labeling", version.ref = "mlkit"}
-
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
