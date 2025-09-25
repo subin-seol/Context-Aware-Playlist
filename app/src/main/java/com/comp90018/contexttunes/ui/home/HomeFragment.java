@@ -1,10 +1,9 @@
 package com.comp90018.contexttunes.ui.home;
 
 
-import android.location.Location;
 import android.Manifest;
 import android.content.pm.PackageManager;
-
+import android.location.Location;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.LayoutInflater;
@@ -19,25 +18,21 @@ import androidx.core.content.ContextCompat;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.ViewModelProvider;
 
-import com.comp90018.contexttunes.BuildConfig;
 import com.comp90018.contexttunes.MainActivity;
-
 import com.comp90018.contexttunes.data.api.GooglePlacesAPI;
-import com.comp90018.contexttunes.data.sensors.LocationSensor;
-import com.comp90018.contexttunes.data.weather.WeatherService;
-import com.comp90018.contexttunes.data.weather.WeatherService.WeatherState;
-import com.comp90018.contexttunes.data.weather.MockWeatherService;
-
 import com.comp90018.contexttunes.data.sensors.LightSensor;
 import com.comp90018.contexttunes.data.sensors.LightSensor.LightBucket;
+import com.comp90018.contexttunes.data.sensors.LocationSensor;
+import com.comp90018.contexttunes.data.weather.MockWeatherService;
+import com.comp90018.contexttunes.data.weather.WeatherService;
+import com.comp90018.contexttunes.data.weather.WeatherService.WeatherState;
 import com.comp90018.contexttunes.databinding.FragmentHomeBinding;
 import com.comp90018.contexttunes.domain.Context;
 import com.comp90018.contexttunes.domain.Recommendation;
 import com.comp90018.contexttunes.domain.RuleEngine;
-import com.google.android.libraries.places.api.model.Place;
 import com.comp90018.contexttunes.ui.viewModel.SharedCameraViewModel;
-
 import com.comp90018.contexttunes.utils.PlaylistOpener;
+import com.google.android.libraries.places.api.model.Place;
 
 import java.util.List;
 
@@ -271,7 +266,7 @@ public class HomeFragment extends Fragment {
         binding.lightValue.setText(lightText);
     }
 
-    // --- PLACES ---
+//     --- PLACES ---
     private void fetchNearbyPlaces(Location location) {
         googlePlacesAPI.getNearbyPlaces(location, 300, new GooglePlacesAPI.NearbyPlacesCallback() {
             @Override

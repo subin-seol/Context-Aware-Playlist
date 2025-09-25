@@ -1,5 +1,5 @@
 [versions]
-agp = "8.12.2"
+agp = "8.12.3"
 junit = "4.13.2"
 junitVersion = "1.3.0"
 espressoCore = "3.7.0"
@@ -11,6 +11,7 @@ cameraCore = "1.4.2"
 cameraLifecycle = "1.4.2"
 cameraView = "1.4.2"
 cameraCamera2 = "1.4.2"
+mlkit = "17.0.9"
 
 [libraries]
 junit = { group = "junit", name = "junit", version.ref = "junit" }
@@ -24,6 +25,7 @@ cameraCore = { group = "androidx.camera", name = "camera-core", version.ref = "c
 cameraLifecycle = { group = "androidx.camera", name = "camera-lifecycle", version.ref = "cameraLifecycle" }
 cameraView = { group = "androidx.camera", name = "camera-view", version.ref = "cameraView" }
 cameraCamera2 = { group = "androidx.camera", name = "camera-camera2", version.ref = "cameraCamera2" }
+mlkit = { group = "com.google.mlkit", name = "image-labeling", version.ref = "mlkit"}
 
 
 [plugins]

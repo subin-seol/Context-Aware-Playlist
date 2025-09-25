@@ -13,12 +13,14 @@ import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.appcompat.app.AppCompatActivity;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.ViewModelProvider;
 
 import com.comp90018.contexttunes.MainActivity;
 import com.comp90018.contexttunes.data.sensors.CameraSensor;
 import com.comp90018.contexttunes.databinding.FragmentSnapBinding;
+import com.comp90018.contexttunes.services.ImageAnalyzer;
 import com.comp90018.contexttunes.ui.viewModel.SharedCameraViewModel;
 
 import java.io.IOException;
@@ -114,6 +116,10 @@ public class SnapFragment extends Fragment {
 
         // Generate button
         binding.btnGenerate.setOnClickListener(v -> {
+            // send image to analyser
+            // TODO: move this to rule engine pipeline when GO button is clicked on homepage
+            ImageAnalyzer imageAnalyzer = new ImageAnalyzer();
+            imageAnalyzer.analyzeImage((AppCompatActivity) requireActivity());
             ((MainActivity) requireActivity()).goToHomeTab();
         });
 
