@@ -80,10 +80,7 @@ public class ImageAnalyser {
 
             String finalDescription = description.toString();
 
-            // Log the labels
-            activity.runOnUiThread(() -> {
-                Log.d("ImageAnalyser", finalDescription);
-            });
+            Log.d("ImageAnalyser", finalDescription);
 
         } catch (Exception e) {
             e.printStackTrace();

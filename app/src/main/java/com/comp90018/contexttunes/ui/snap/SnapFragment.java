@@ -116,11 +116,18 @@ public class SnapFragment extends Fragment {
 
         // Generate button
         binding.btnGenerate.setOnClickListener(v -> {
-            // send image to analyser
-            // TODO: move this to rule engine pipeline when GO button is clicked on homepage
-            ImageAnalyser imageAnalyzer = new ImageAnalyser(requireContext());
-            imageAnalyzer.analyzeImage((AppCompatActivity) requireActivity());
-            ((MainActivity) requireActivity()).goToHomeTab();
+            // send image to analyser on background thread
+            new Thread(() -> {
+                // send image to analyser on background thread
+                // TODO: move this to rule engine pipeline when GO button is clicked on homepage
+                ImageAnalyser imageAnalyzer = new ImageAnalyser(requireContext());
+                imageAnalyzer.analyzeImage((AppCompatActivity) requireActivity());
+
+                // Optionally, switch back to UI thread to navigate
+                requireActivity().runOnUiThread(() ->
+                        ((MainActivity) requireActivity()).goToHomeTab()
+                );
+            }).start();
         });
 
         // Back button
