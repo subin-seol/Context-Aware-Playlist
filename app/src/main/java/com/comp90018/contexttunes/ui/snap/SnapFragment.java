@@ -13,13 +13,15 @@ import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.appcompat.app.AppCompatActivity;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.ViewModelProvider;
 
 import com.comp90018.contexttunes.MainActivity;
 import com.comp90018.contexttunes.data.sensors.CameraSensor;
 import com.comp90018.contexttunes.databinding.FragmentSnapBinding;
-import com.comp90018.contexttunes.ui.viewModel.SharedCameraViewModel;
+import com.comp90018.contexttunes.services.ImageAnalyser;
+import com.comp90018.contexttunes.data.viewModel.ImageViewModel;
 
 import java.io.IOException;
 
@@ -45,8 +47,8 @@ public class SnapFragment extends Fragment {
                                 Bitmap bitmap = MediaStore.Images.Media.getBitmap(
                                         requireActivity().getContentResolver(), selectedImageUri);
                                 // Get viewModel instance since it might not be initialized yet
-                                SharedCameraViewModel vm = new ViewModelProvider(requireActivity())
-                                        .get(SharedCameraViewModel.class);
+                                ImageViewModel vm = new ViewModelProvider(requireActivity())
+                                        .get(ImageViewModel.class);
                                 vm.setCapturedImage(bitmap);
                             } catch (IOException e) {
                                 e.printStackTrace();
@@ -71,8 +73,8 @@ public class SnapFragment extends Fragment {
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
 
-        SharedCameraViewModel viewModel = new ViewModelProvider(requireActivity())
-                .get(SharedCameraViewModel.class);
+        ImageViewModel viewModel = new ViewModelProvider(requireActivity())
+                .get(ImageViewModel.class);
 
         cameraSensor = new CameraSensor(requireContext(), binding.cameraPreview, getViewLifecycleOwner());
 
@@ -114,7 +116,18 @@ public class SnapFragment extends Fragment {
 
         // Generate button
         binding.btnGenerate.setOnClickListener(v -> {
-            ((MainActivity) requireActivity()).goToHomeTab();
+            // send image to analyser on background thread
+            new Thread(() -> {
+                // send image to analyser on background thread
+                // TODO: move this to rule engine pipeline when GO button is clicked on homepage
+                ImageAnalyser imageAnalyzer = new ImageAnalyser(requireContext());
+                imageAnalyzer.analyzeImage((AppCompatActivity) requireActivity());
+
+                // Optionally, switch back to UI thread to navigate
+                requireActivity().runOnUiThread(() ->
+                        ((MainActivity) requireActivity()).goToHomeTab()
+                );
+            }).start();
         });
 
         // Back button
