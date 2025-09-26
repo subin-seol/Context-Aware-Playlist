@@ -5,9 +5,9 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Intent;
-import android.os.Handler;
+import android.os.Build;
 import android.os.IBinder;
-import android.os.Looper;
+import android.util.Log;
 
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
@@ -17,104 +17,145 @@ import com.comp90018.contexttunes.data.sensors.SpeedSensor;
 import com.comp90018.contexttunes.utils.AppEvents;
 
 /**
- * Foreground service that:
- * 1) Runs a short 5s speed sampling burst every PERIOD_MS (power-friendly)
- * 2) Supports an "immediate burst" command via ACTION_SPEED_SAMPLE_NOW
- * 3) Broadcasts ACTION_SPEED_UPDATE with speed/cadence/activity/BPM/source
+ * Foreground service that performs an on-demand 5s speed burst.
+ * - Steps-first; GPS fallback.
+ * - Emits ACTION_SPEED_UPDATE with a 4-way tag and target BPM.
  */
-public class SpeedSensorService extends Service implements SpeedSensor.Callback {
+public class SpeedSensorService extends Service {
 
+    private static final String TAG = "SpeedSensorService";
     private static final String CHANNEL_ID = "ctx_speed_channel";
-    private static final int NOTIF_ID = 12001;
+    private static final int NOTI_ID = 1138;
 
-    /** Change this to 10 * 60 * 1000L if you want every 10 minutes. */
-    private static final long PERIOD_MS = 15 * 60 * 1000L; // every 15 minutes
-    private static final long BURST_MS  = 5 * 1000L;       // 5 seconds burst
+    // --- Same universal thresholds (km/h) ---
+    private static final float STILL_MAX_KMH = 0.7f;
+    private static final float WALK_MAX_KMH  = 6.0f;
+    private static final float RUN_MAX_KMH   = 15.0f;
 
-    private final Handler handler = new Handler(Looper.getMainLooper());
-    private SpeedSensor speedSensor;
+    // BPM mapping
+    private static final float CADENCE_MULTIPLIER = 2.0f; // bpm ~= cadence*2
+    private static final int   BPM_MIN = 60;
+    private static final int   BPM_MAX = 190;
+    private static final float CADENCE_MIN_SPM = 20f;
 
-    private final Runnable tick = new Runnable() {
-        @Override public void run() {
-            if (speedSensor != null) speedSensor.startBurstSession(BURST_MS);
-            handler.postDelayed(this, PERIOD_MS);
-        }
-    };
+    private SpeedSensor sensor;
 
     @Override public void onCreate() {
         super.onCreate();
         createChannel();
-        Notification n = new NotificationCompat.Builder(this, CHANNEL_ID)
-                .setSmallIcon(R.mipmap.ic_launcher) // replace with your drawable if needed
-                .setContentTitle("Auto Mode · Speed Sensing")
-                .setContentText("Short-burst speed sampling for playlist recommendation")
-                .setOngoing(true)
-                .build();
-        startForeground(NOTIF_ID, n);
 
-        speedSensor = new SpeedSensor(getApplicationContext(), this);
+        int smallIcon = R.drawable.ic_stat_speed; // ensure this drawable exists
+        Notification noti = new NotificationCompat.Builder(this, CHANNEL_ID)
+                .setSmallIcon(smallIcon)
+                .setContentTitle("Auto Mode · Speed Sensing")
+                .setContentText("Ready")
+                .setOnlyAlertOnce(true)
+                .setOngoing(true)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setCategory(Notification.CATEGORY_SERVICE)
+                .build();
+        startForeground(NOTI_ID, noti);
+        Log.d(TAG, "startForeground posted");
+
+        sensor = new SpeedSensor(getApplicationContext());
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
-        handler.removeCallbacks(tick);
-
-        // Immediate 5s burst when ACTION_SPEED_SAMPLE_NOW is received
-        if (intent != null && AppEvents.ACTION_SPEED_SAMPLE_NOW.equals(intent.getAction())) {
-            if (speedSensor != null) speedSensor.startBurstSession(BURST_MS);
-            handler.postDelayed(tick, PERIOD_MS);  // keep periodic schedule
-        } else {
-            // Normal periodic schedule: run now, then every PERIOD_MS
-            handler.post(tick);
+        String action = (intent != null) ? intent.getAction() : null;
+        Log.d(TAG, "onStartCommand action=" + action);
+        if (AppEvents.ACTION_SPEED_SAMPLE_NOW.equals(action)) {
+            Log.d(TAG, "runBurst5s()");
+            runBurst5s();
         }
         return START_STICKY;
     }
 
-    @Override public void onDestroy() {
-        handler.removeCallbacks(tick);
-        if (speedSensor != null) speedSensor.stopBurstSession();
-        super.onDestroy();
+    private void emit(Intent i) {
+        // Use an explicit package-scoped broadcast so only our app receives it
+        i.setPackage(getPackageName());
+        sendBroadcast(i);
+    }
+
+    private void runBurst5s() {
+        sensor.startBurstSession(5000L, new SpeedSensor.Callback() {
+            @Override public void onMeasurement(SpeedSensor.Measurement m) {
+                float kmh = m.speedMps * 3.6f;
+                String tag = classifyTag(kmh, m.cadenceSpm, m.source);
+                int targetBpm = bpmFromCadenceOrSpeed(m.cadenceSpm, kmh);
+
+                Intent i = new Intent(AppEvents.ACTION_SPEED_UPDATE);
+                i.putExtra(AppEvents.EXTRA_SPEED_MPS, m.speedMps);
+                i.putExtra(AppEvents.EXTRA_SPEED_KMH, kmh);
+                if (m.cadenceSpm != null) i.putExtra(AppEvents.EXTRA_CADENCE_SPM, m.cadenceSpm);
+                i.putExtra(AppEvents.EXTRA_ACTIVITY, m.activity);
+                i.putExtra(AppEvents.EXTRA_TARGET_BPM, targetBpm);
+                i.putExtra(AppEvents.EXTRA_SOURCE, m.source);
+                i.putExtra(AppEvents.EXTRA_SPEED_TAG, tag);
+
+                Log.d(TAG, "emit: " + String.format("~%.2f km/h · %s (src=%s)", kmh, tag, m.source));
+                emit(i);
+
+                updateNotification(String.format("~%.1f km/h · %s", kmh, tag));
+            }
+            @Override public void onError(Exception e) {
+                Log.e(TAG, "measurement error", e);
+                updateNotification("No measurement");
+            }
+        });
+    }
+
+    private void updateNotification(String subtitle) {
+        int smallIcon = R.drawable.ic_stat_speed;
+        Notification noti = new NotificationCompat.Builder(this, CHANNEL_ID)
+                .setSmallIcon(smallIcon)
+                .setContentTitle("Auto Mode · Speed Sensing")
+                .setContentText(subtitle)
+                .setOnlyAlertOnce(true)
+                .setOngoing(true)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setCategory(Notification.CATEGORY_SERVICE)
+                .build();
+        startForeground(NOTI_ID, noti);
+    }
+
+    private void createChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel ch = new NotificationChannel(
+                    CHANNEL_ID, "Speed Sensor", NotificationManager.IMPORTANCE_LOW);
+            ch.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
+            NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+            if (nm != null) nm.createNotificationChannel(ch);
+        }
     }
 
     @Nullable @Override public IBinder onBind(Intent intent) { return null; }
 
-    // ---- SpeedSensor.Callback ----
-    @Override public void onMeasurement(SpeedSensor.Measurement m) {
-        float kmh = m.speedMps * 3.6f;
+    // ---- tag + BPM mapping (must mirror thresholds above) ----
+    private static String classifyTag(float speedKmh, @Nullable Float cadenceSpm, String source) {
+        // Always treat very low speed as STILL
+        if (speedKmh < STILL_MAX_KMH) return "STILL";
 
-        // 1) Broadcast the result to the rest of the app
-        Intent i = new Intent(AppEvents.ACTION_SPEED_UPDATE);
-        i.putExtra(AppEvents.EXTRA_SPEED_MPS, m.speedMps);
-        i.putExtra(AppEvents.EXTRA_SPEED_KMH, kmh);
-        if (m.cadenceSpm != null) i.putExtra(AppEvents.EXTRA_CADENCE_SPM, m.cadenceSpm);
-        if (m.activity   != null) i.putExtra(AppEvents.EXTRA_ACTIVITY,    m.activity);
-        if (m.targetBpm  != null) i.putExtra(AppEvents.EXTRA_TARGET_BPM,  m.targetBpm);
-        if (m.source     != null) i.putExtra(AppEvents.EXTRA_SOURCE,      m.source);
-        sendBroadcast(i);
-
-        // 2) Optional: update the foreground notification (useful during dev/demo)
-        String sub = String.format("~%.1f km/h · %s", kmh, (m.activity != null ? m.activity : "unknown"));
-        Notification n = new NotificationCompat.Builder(this, CHANNEL_ID)
-                .setSmallIcon(R.mipmap.ic_launcher)
-                .setContentTitle("Auto Mode · Speed Sensing")
-                .setContentText(sub)
-                .setOngoing(true)
-                .build();
-        NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-        if (nm != null) nm.notify(NOTIF_ID, n);
-
-        if (speedSensor != null) speedSensor.stopBurstSession();
-    }
-
-    @Override public void onError(String reason) {
-        if (speedSensor != null) speedSensor.stopBurstSession();
-    }
-
-    private void createChannel() {
-        if (android.os.Build.VERSION.SDK_INT >= 26) {
-            NotificationChannel ch = new NotificationChannel(
-                    CHANNEL_ID, "Speed Sensor", NotificationManager.IMPORTANCE_LOW);
-            NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-            if (nm != null) nm.createNotificationChannel(ch);
+        // Prefer cadence when present: never output WHEELS from steps
+        if (cadenceSpm != null && cadenceSpm >= CADENCE_MIN_SPM) {
+            return (speedKmh >= WALK_MAX_KMH) ? "RUN" : "WALK";
         }
+
+        // GPS-only: allow WHEELS at high speed
+        if (speedKmh >= RUN_MAX_KMH && !"steps".equals(source)) return "WHEELS";
+        if (speedKmh >= WALK_MAX_KMH) return "RUN";
+        return "WALK";
+    }
+
+    private static int bpmFromCadenceOrSpeed(@Nullable Float cadenceSpm, float speedKmh) {
+        int bpm;
+        if (cadenceSpm != null && cadenceSpm >= CADENCE_MIN_SPM) {
+            bpm = Math.round(cadenceSpm * CADENCE_MULTIPLIER);
+        } else {
+            if (speedKmh < STILL_MAX_KMH)      bpm = 70;   // STILL
+            else if (speedKmh < WALK_MAX_KMH)  bpm = 100;  // WALK
+            else if (speedKmh < RUN_MAX_KMH)   bpm = 155;  // RUN
+            else                               bpm = 110;  // WHEELS cruising
+        }
+        return Math.max(BPM_MIN, Math.min(BPM_MAX, bpm));
     }
 }

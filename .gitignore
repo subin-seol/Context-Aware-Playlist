@@ -23,3 +23,12 @@
 
 # Local configuration (SDK paths)
 local.properties
+
+# Ignore accidental shell command files
+git config --global credential.helper*
+
+# Ignore SSH keys
+*.pem
+*.key
+*.pub
+.ssh/

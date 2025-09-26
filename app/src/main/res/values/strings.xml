@@ -4,4 +4,14 @@
     <string name="longitude_format">Longitude: %1$.5f</string>
     <string name="latitude_na">Latitude: N/A</string>
     <string name="longitude_na">Longitude: N/A</string>
+
+    <!-- added for speed sensing UI -->
+    <string name="label_go">GO</string>
+    <string name="label_measuring">Measuring…</string>
+    <string name="label_dash">—</string>
+    <string name="speed_tag_still">Still</string>
+    <string name="speed_tag_walk">Walking</string>
+    <string name="speed_tag_run">Running</string>
+    <string name="speed_tag_wheels">Wheels</string>
+    <string name="toast_no_speed">No speed result. Check permissions/GPS.</string>
 </resources>
