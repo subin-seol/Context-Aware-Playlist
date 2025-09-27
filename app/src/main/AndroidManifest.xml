@@ -1,23 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.comp90018.contexttunes"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Location & foreground service permissions (required for speed sensing) -->
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
-    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Location / Foreground service / Step counter / Notifications -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-feature android:name="android.hardware.camera" android:required="false"/>
+    <uses-permission android:name="android.permission.INTERNET"/>
 
-    <!-- Existing app permissions/features -->
-    <uses-permission android:name="android.permission.CAMERA" />
-    <uses-feature android:name="android.hardware.camera" android:required="false" />
-    <uses-permission android:name="android.permission.INTERNET" />
-
-    <!-- Query for Spotify app -->
+    <!-- Optional: query Spotify app -->
     <queries>
-        <package android:name="com.spotify.music" />
+        <package android:name="com.spotify.music"/>
     </queries>
 
     <application
@@ -39,11 +38,10 @@
             </intent-filter>
         </activity>
 
-        <!-- Foreground speed sensor service -->
+        <!-- Your foreground speed sensor service -->
         <service
             android:name=".services.SpeedSensorService"
             android:exported="false"
-            android:foregroundServiceType="location" />
+            android:foregroundServiceType="location"/>
     </application>
-
 </manifest>

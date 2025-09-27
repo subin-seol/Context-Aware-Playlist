@@ -16,8 +16,26 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    // Read Places API key from gradle.properties or environment variable (fallback to empty string)
+    val placesKey: String =
+        (providers.gradleProperty("PLACES_API_KEY").orNull
+            ?: System.getenv("PLACES_API_KEY") ?: "")
+
+    // Read OpenWeather API key from gradle.properties or environment variable (fallback to empty string)
+    val openWeatherKey: String =
+        (providers.gradleProperty("OPENWEATHER_API_KEY").orNull
+            ?: System.getenv("OPENWEATHER_API_KEY") ?: "")
+
     buildTypes {
-        release {
+        getByName("debug") {
+            // Expose keys via BuildConfig (avoid hardcoding in source)
+            buildConfigField("String", "PLACES_API_KEY", "\"$placesKey\"")
+            buildConfigField("String", "OPENWEATHER_API_KEY", "\"$openWeatherKey\"")
+            isMinifyEnabled = false
+        }
+        getByName("release") {
+            buildConfigField("String", "PLACES_API_KEY", "\"$placesKey\"")
+            buildConfigField("String", "OPENWEATHER_API_KEY", "\"$openWeatherKey\"")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -25,37 +43,42 @@ android {
             )
         }
     }
+
     compileOptions {
+        // Keep consistent with the rest of the project
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
 
     buildFeatures {
         viewBinding = true
+        buildConfig = true // Required to use buildConfigField
     }
 }
 
 dependencies {
-    // --- AndroidX UI
+    // ---- UI basics ----
     implementation(libs.appcompat)
     implementation(libs.material)
     implementation(libs.activity)
     implementation(libs.constraintlayout)
 
-    // --- CameraX
+    // ---- CameraX ----
     implementation(libs.cameraCore)
     implementation(libs.cameraLifecycle)
     implementation(libs.cameraView)
     implementation(libs.cameraCamera2)
 
-    // --- Test
+    // ---- Google Location / Maps / Places ----
+    implementation("com.google.android.gms:play-services-location:21.3.0")
+    implementation("com.google.android.gms:play-services-maps:18.2.0")
+    implementation("com.google.android.libraries.places:places:3.5.0")
+
+    // ---- Local broadcast (Service <-> Fragment) ----
+    implementation("androidx.localbroadcastmanager:localbroadcastmanager:1.1.0")
+
+    // ---- Test ----
     testImplementation(libs.junit)
     androidTestImplementation(libs.ext.junit)
     androidTestImplementation(libs.espresso.core)
-
-    // --- Google Play services: Fused Location
-    implementation("com.google.android.gms:play-services-location:21.3.0")
-
-    // --- Core (for ContextCompat.registerReceiver, etc.)
-    implementation("androidx.core:core-ktx:1.13.1")
 }

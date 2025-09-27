@@ -1,6 +1,7 @@
 package com.comp90018.contexttunes.domain;
 
 import com.comp90018.contexttunes.data.sensors.LightSensor.LightBucket;
+import com.comp90018.contexttunes.data.weather.WeatherService.WeatherState;
 import java.util.Calendar;
 
 public class RuleEngine {
@@ -33,8 +34,26 @@ public class RuleEngine {
     public static Recommendation getRecommendation(Context context) {
         String timeOfDay = context.timeOfDay;
         LightBucket light = context.lightLevel;
+        WeatherState weather = context.weather;
 
-        // rules
+        // Weather-based rules (high priority)
+        if (weather == WeatherState.RAINY) {
+            return new Recommendation(CHILL_PLAYLIST, "Rainy weather calls for cozy vibes");
+        }
+
+        if (weather == WeatherState.SUNNY && timeOfDay.equals("morning")) {
+            return new Recommendation(MORNING_PLAYLIST, "Sunny morning - perfect start to the day");
+        }
+
+        if (weather == WeatherState.SUNNY && context.activity.equals("still")) {
+            return new Recommendation(PUMP_UP_PLAYLIST, "Sunny weather boosts energy");
+        }
+
+        if (weather == WeatherState.CLOUDY && (timeOfDay.equals("evening") || timeOfDay.equals("night"))) {
+            return new Recommendation(CHILL_PLAYLIST, "Cloudy evening suggests relaxation");
+        }
+
+        // Original light-based rules (fallback)
         if (timeOfDay.equals("morning") && light == LightBucket.BRIGHT) {
             return new Recommendation(MORNING_PLAYLIST, "Bright morning light detected");
         }

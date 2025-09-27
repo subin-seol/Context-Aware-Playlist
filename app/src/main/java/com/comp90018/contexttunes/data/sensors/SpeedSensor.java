@@ -1,253 +1,167 @@
 package com.comp90018.contexttunes.data.sensors;
 
-import android.Manifest;
-import android.content.Context;
-import android.content.pm.PackageManager;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
-import android.location.Location;
-import android.os.Build;
-import android.os.Handler;
-import android.os.Looper;
-import android.util.Log;
 
 import androidx.annotation.Nullable;
-import androidx.core.app.ActivityCompat;
-
-import com.google.android.gms.location.FusedLocationProviderClient;
-import com.google.android.gms.location.LocationCallback;
-import com.google.android.gms.location.LocationRequest;
-import com.google.android.gms.location.LocationResult;
-import com.google.android.gms.location.LocationServices;
-import com.google.android.gms.location.Priority;
 
 /**
- * 5s burst sampler with STEPS-FIRST and GPS fallback.
- * - Filters poor GPS samples and applies a low-pass smoothing.
- * - Emits exactly one Measurement when the burst ends.
+ * Cadence-first sensor wrapper.
+ *
+ * Priority:
+ *  1) TYPE_STEP_DETECTOR / TYPE_STEP_COUNTER (may require ACTIVITY_RECOGNITION on Android 10+).
+ *  2) Accelerometer fallback with gravity removal + peak picking when step sensors are absent,
+ *     permission is denied, or vendor blocks events.
+ *
+ * API:
+ *  - start()/stop()
+ *  - boolean isCadenceAlive(): true if a step seen within ALIVE_MS
+ *  - int pollCadenceBPM(): current cadence (steps/min), decays to 0 when idle
+ *  - static double estimateSpeedFromCadenceEma(int spm, double prevKmh): stride-based mapping
  */
-public class SpeedSensor {
+public class SpeedSensor implements SensorEventListener {
 
-    public static class Measurement {
-        public float  speedMps;                 // final speed (m/s)
-        @Nullable public Float cadenceSpm;      // steps/min (if available)
-        public String activity;                 // "still" | "walking" | "running"
-        public String source;                   // "steps" | "gps"
-    }
+    private static final double CADENCE_EMA_ALPHA = 0.30;
+    private static final long   ALIVE_MS          = 2000L;
 
-    public interface Callback {
-        void onMeasurement(Measurement m);
-        void onError(Exception e);
-    }
+    // Accelerometer fallback (conservative to avoid false steps at rest)
+    private static final double LP_ALPHA           = 0.90;  // gravity low-pass
+    private static final double PEAK_THRESHOLD_G   = 0.12;  // peak threshold after gravity removal
+    private static final long   PEAK_REFRACTORY_MS = 280L;  // min spacing between peaks
 
-    private static final String TAG = "SpeedSensor";
-
-    // -------- Universal thresholds (km/h) --------
-    private static final float STILL_MAX_KMH = 0.7f;
-    private static final float WALK_MAX_KMH  = 6.0f;
-    private static final float RUN_MAX_KMH   = 15.0f; // >=15 => WHEELS (GPS-only)
-
-    // -------- GPS quality / smoothing --------
-    private static final float ACCURACY_M_MAX       = 25f;  // ignore if worse
-    private static final float SPEED_ACC_MPS_MAX    = 2.0f; // ignore if worse (when available)
-    private static final float MIN_DT_S             = 0.4f; // compute-by-distance min time
-    private static final float MIN_DISPLACEMENT_M   = 1.5f; // compute-by-distance min distance
-    private static final float LPF_ALPHA            = 0.6f; // low-pass smoothing factor
-
-    // -------- Cadence heuristics --------
-    private static final float CADENCE_MIN_SPM   = 20f;   // ignore cadence below this
-    private static final float STEP_LEN_WALK_M   = 0.70f; // lower bound step length
-    private static final float STEP_LEN_RUN_M    = 1.20f; // upper bound step length
-    private static final float CAD_WALK_REF      = 100f;  // start interpolation
-    private static final float CAD_RUN_REF       = 160f;  // end interpolation
-
-    private final Context app;
-    private final Handler ui = new Handler(Looper.getMainLooper());
-
-    // GPS
-    private final FusedLocationProviderClient flp;
-    private LocationCallback locCb;
-    private boolean anyGps = false;
-    private float   smoothedMps = 0f;
-    private boolean smoothInit  = false;
-    private Location lastLoc = null;
-    private long     lastTimeMs = 0L;
-
-    // Steps
     private final SensorManager sm;
-    private SensorEventListener stepListener;
-    private Sensor stepCounter;
-    private float  startSteps = -1f;
-    private float  endSteps   = -1f;
+    @Nullable private final Sensor stepDetector;
+    @Nullable private final Sensor stepCounter;
+    @Nullable private final Sensor accelerometer;
 
-    private boolean running = false;
+    private boolean haveCounterBase = false;
+    private long    counterBase     = 0;
+    private long    lastStepAtMs    = 0;
+    private double  cadenceEma      = 0.0;
 
-    public SpeedSensor(Context applicationContext) {
-        this.app = applicationContext.getApplicationContext();
-        this.flp = LocationServices.getFusedLocationProviderClient(app);
-        this.sm  = (SensorManager) app.getSystemService(Context.SENSOR_SERVICE);
-        this.stepCounter = (sm != null) ? sm.getDefaultSensor(Sensor.TYPE_STEP_COUNTER) : null;
+    // fallback state
+    private double  lpMag           = 0.0;
+    private long    lastPeakAt      = 0L;
+
+    public SpeedSensor(SensorManager sm) {
+        this.sm = sm;
+        this.stepDetector  = sm.getDefaultSensor(Sensor.TYPE_STEP_DETECTOR);
+        this.stepCounter   = sm.getDefaultSensor(Sensor.TYPE_STEP_COUNTER);
+        this.accelerometer = sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
     }
 
-    public void startBurstSession(long durationMs, Callback cb) {
-        if (running) {
-            Log.w(TAG, "burst already running");
+    /** Always call start(); we guard runtime-permission failures via try/catch. */
+    public void start() {
+        try { if (stepDetector != null) sm.registerListener(this, stepDetector, SensorManager.SENSOR_DELAY_NORMAL); }
+        catch (SecurityException ignore) {}
+        try { if (stepCounter != null)  sm.registerListener(this, stepCounter,  SensorManager.SENSOR_DELAY_NORMAL); }
+        catch (SecurityException ignore) {}
+
+        if (accelerometer != null) {
+            sm.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_GAME); // ~50 Hz
+        }
+
+        haveCounterBase = false;
+        cadenceEma = 0.0;
+        lastStepAtMs = 0L;
+        lastPeakAt = 0L;
+        lpMag = 0.0;
+    }
+
+    public void stop() { sm.unregisterListener(this); }
+
+    public boolean isCadenceAlive() {
+        return (System.currentTimeMillis() - lastStepAtMs) <= ALIVE_MS;
+    }
+
+    public int pollCadenceBPM() {
+        double ema = cadenceEma;
+        if (!isCadenceAlive()) {
+            // decay faster when idle
+            ema *= 0.85;
+            if (ema < 1.0) ema = 0.0;
+            cadenceEma = ema;
+        }
+        return (int) Math.round(cadenceEma);
+    }
+
+    /**
+     * Cadence→speed using a piecewise stride-length model:
+     *  - empirical average adult step length 0.60–0.80 m when walking, 1.0–1.2 m when running
+     *  - we let stride increase with cadence, then v = cadence * stride / 60 (m/s)
+     *  - convert to km/h and blend slightly with previous to avoid jumps when sources switch
+     */
+    public static double estimateSpeedFromCadenceEma(int spm, double prevKmh) {
+        double stride; // meters per step
+        if (spm < 100) {
+            // 60 spm -> 0.60 m ; 100 spm -> 0.80 m
+            stride = 0.60 + (spm - 60) * 0.005;
+        } else if (spm < 150) {
+            // 100 spm -> 0.80 m ; 150 spm -> 1.10 m
+            stride = 0.80 + (spm - 100) * 0.006;
+        } else {
+            // 150 spm -> 1.10 m ; 180 spm -> ~1.22 m
+            stride = 1.10 + (spm - 150) * 0.004;
+        }
+        if (stride < 0.50) stride = 0.50;
+        if (stride > 1.30) stride = 1.30;
+
+        double vKmh = (spm / 60.0) * stride * 3.6;   // km/h
+        // light smoothing against the previously estimated km/h
+        vKmh = 0.30 * vKmh + 0.70 * Math.max(0, prevKmh);
+        return Math.max(0.0, Math.min(vKmh, 18.0));  // reasonable cap
+    }
+
+    // ---- Sensor callbacks ----
+
+    @Override public void onSensorChanged(SensorEvent e) {
+        long now = System.currentTimeMillis();
+
+        if (e.sensor.getType() == Sensor.TYPE_STEP_DETECTOR) {
+            if (e.values != null && e.values.length > 0 && e.values[0] > 0.5f) onStep(now);
             return;
         }
-        running = true;
-
-        // reset state
-        anyGps = false;
-        smoothedMps = 0f; smoothInit = false;
-        lastLoc = null; lastTimeMs = 0L;
-        startSteps = -1f; endSteps = -1f;
-
-        // ---- STEPS (priority) ----
-        if (sm != null && stepCounter != null) {
-            stepListener = new SensorEventListener() {
-                @Override public void onSensorChanged(SensorEvent e) {
-                    if (e.sensor.getType() == Sensor.TYPE_STEP_COUNTER) {
-                        float v = e.values[0];
-                        if (startSteps < 0f) startSteps = v;
-                        endSteps = v;
-                    }
-                }
-                @Override public void onAccuracyChanged(Sensor s, int a) {}
-            };
-            sm.registerListener(stepListener, stepCounter, SensorManager.SENSOR_DELAY_NORMAL);
-        } else {
-            Log.d(TAG, "no step-counter sensor on this device/emulator");
-        }
-
-        // ---- GPS (fallback) ----
-        boolean locPerm =
-                ActivityCompat.checkSelfPermission(app, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-                        || ActivityCompat.checkSelfPermission(app, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED;
-
-        if (locPerm) {
-            LocationRequest req = new LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 800L)
-                    .setMinUpdateIntervalMillis(500L)
-                    .build();
-            locCb = new LocationCallback() {
-                @Override public void onLocationResult(LocationResult result) {
-                    if (result == null) return;
-                    for (Location loc : result.getLocations()) {
-                        if (!isUsable(loc)) continue;
-                        anyGps = true;
-
-                        float sp = 0f; // m/s
-                        if (loc.hasSpeed()) {
-                            sp = Math.max(0f, loc.getSpeed());
-                        } else if (lastLoc != null && lastTimeMs > 0L) {
-                            long now = System.currentTimeMillis();
-                            float dt = (now - lastTimeMs) / 1000f;
-                            if (dt >= MIN_DT_S) {
-                                float d = loc.distanceTo(lastLoc);
-                                if (d >= MIN_DISPLACEMENT_M) {
-                                    sp = Math.max(0f, d / dt);
-                                }
-                            }
-                        }
-
-                        // low-pass smoothing
-                        if (!smoothInit) {
-                            smoothedMps = sp;
-                            smoothInit = true;
-                        } else {
-                            smoothedMps = smoothedMps + LPF_ALPHA * (sp - smoothedMps);
-                        }
-
-                        lastLoc = loc;
-                        lastTimeMs = System.currentTimeMillis();
-                    }
-                }
-            };
-            try {
-                flp.requestLocationUpdates(req, locCb, Looper.getMainLooper());
-            } catch (Exception e) {
-                Log.w(TAG, "requestLocationUpdates failed: " + e);
-            }
-        } else {
-            Log.w(TAG, "no location permission; GPS disabled for this burst.");
-        }
-
-        // ---- stop & emit once at the end ----
-        ui.postDelayed(() -> {
-            stopInternal();
-
-            Measurement m = new Measurement();
-            // cadence
-            Float cadenceSpm = null;
-            if (startSteps >= 0f && endSteps >= 0f && endSteps > startSteps && durationMs > 0) {
-                float delta = endSteps - startSteps; // steps in burst
-                cadenceSpm = delta * (60_000f / durationMs); // steps/min
-            }
-            m.cadenceSpm = cadenceSpm;
-
-            if (cadenceSpm != null && cadenceSpm >= CADENCE_MIN_SPM) {
-                // --- STEPS-FIRST ---
-                float stepLen = stepLengthFromCadence(cadenceSpm);
-                float mpsFromCadence = (cadenceSpm / 60f) * stepLen;
-
-                m.speedMps = mpsFromCadence;
-                float kmh = m.speedMps * 3.6f;
-                if (kmh < STILL_MAX_KMH)      m.activity = "still";
-                else if (kmh < WALK_MAX_KMH)  m.activity = "walking";
-                else                           m.activity = "running";
-                m.source = "steps";
-            } else if (anyGps) {
-                // --- GPS fallback (smoothed) ---
-                m.speedMps = Math.max(0f, smoothedMps);
-                float kmh = m.speedMps * 3.6f;
-                if (kmh < STILL_MAX_KMH)      m.activity = "still";
-                else if (kmh < WALK_MAX_KMH)  m.activity = "walking";
-                else                           m.activity = "running"; // wheels tagging happens in service
-                m.source = "gps";
+        if (e.sensor.getType() == Sensor.TYPE_STEP_COUNTER) {
+            long total = (long) e.values[0];
+            if (!haveCounterBase) {
+                counterBase = total;
+                haveCounterBase = true;
             } else {
-                // absolutely nothing -> STILL
-                m.speedMps = 0f;
-                m.activity = "still";
-                m.source   = "gps";
+                long inc = total - counterBase;
+                if (inc > 0) {
+                    counterBase = total;
+                    onStep(now);
+                }
             }
-
-            try { cb.onMeasurement(m); }
-            catch (Exception e) { Log.e(TAG, "callback failed", e); cb.onError(e); }
-
-        }, durationMs);
-    }
-
-    private void stopInternal() {
-        if (!running) return;
-        running = false;
-
-        if (locCb != null) {
-            try { flp.removeLocationUpdates(locCb); } catch (Exception ignore) {}
-            locCb = null;
+            return;
         }
-        if (sm != null && stepListener != null) {
-            try { sm.unregisterListener(stepListener); } catch (Exception ignore) {}
-            stepListener = null;
-        }
-    }
-
-    // ---- helpers ----
-    private boolean isUsable(Location loc) {
-        if (loc == null) return false;
-        if (loc.hasAccuracy() && loc.getAccuracy() > ACCURACY_M_MAX) return false;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            if (loc.hasSpeedAccuracy() && loc.getSpeedAccuracyMetersPerSecond() > SPEED_ACC_MPS_MAX) {
-                return false;
+        if (e.sensor.getType() == Sensor.TYPE_ACCELEROMETER) {
+            final float ax = e.values[0], ay = e.values[1], az = e.values[2];
+            final double mag = Math.sqrt(ax * ax + ay * ay + az * az) / SensorManager.GRAVITY_EARTH; // g
+            lpMag = LP_ALPHA * lpMag + (1.0 - LP_ALPHA) * mag;
+            final double high = mag - lpMag; // gravity removed
+            if (high > PEAK_THRESHOLD_G && (now - lastPeakAt) > PEAK_REFRACTORY_MS) {
+                lastPeakAt = now;
+                onStep(now);
             }
         }
-        return true;
     }
 
-    private static float stepLengthFromCadence(float cadenceSpm) {
-        // Linear interpolation between walk and run step length based on cadence 100..160 spm
-        float t = (cadenceSpm - CAD_WALK_REF) / (CAD_RUN_REF - CAD_WALK_REF);
-        t = Math.max(0f, Math.min(1f, t));
-        return STEP_LEN_WALK_M + t * (STEP_LEN_RUN_M - STEP_LEN_WALK_M);
+    private void onStep(long now) {
+        if (lastStepAtMs > 0) {
+            long dt = now - lastStepAtMs;
+            if (dt > 0) {
+                double instSpm = 60_000.0 / dt; // steps/min
+                cadenceEma = CADENCE_EMA_ALPHA * instSpm + (1.0 - CADENCE_EMA_ALPHA) * cadenceEma;
+            }
+        } else {
+            // bootstrap from 0 so the first mapping to speed responds
+            cadenceEma = Math.max(cadenceEma, 20.0);
+        }
+        lastStepAtMs = now;
     }
+
+    @Override public void onAccuracyChanged(Sensor sensor, int accuracy) {}
 }

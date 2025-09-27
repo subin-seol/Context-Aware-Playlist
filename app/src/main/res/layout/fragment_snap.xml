@@ -36,53 +36,69 @@
 
     </FrameLayout>
 
-    <LinearLayout
+    <RelativeLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center"
         android:padding="16dp">
 
-        <!-- Shutter button (visible first) -->
+        <!-- Upload button (left side) -->
+        <ImageButton
+            android:id="@+id/btn_upload"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_alignParentStart="true"
+            android:layout_centerVertical="true"
+            android:layout_marginStart="32dp"
+            android:src="@drawable/image"
+            android:contentDescription="Image Upload" />
+
+        <!-- Capture button (center) -->
         <ImageButton
             android:id="@+id/btn_capture"
             android:layout_width="80dp"
             android:layout_height="80dp"
+            android:layout_centerInParent="true"
             android:background="@drawable/camera_button_background"
             android:src="@drawable/camera_button_background"
             android:contentDescription="Capture" />
 
+        <!-- Retake and Generate buttons container -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_centerVertical="true">
 
-        <!-- Retake button (hidden first) -->
-        <TextView
-            android:id="@+id/btn_retake"
-            android:layout_width="0dp"
-            android:layout_height="48dp"
-            android:layout_weight="1"
-            android:layout_marginEnd="8dp"
-            android:background="@drawable/retake_button"
-            android:text="Retake"
-            android:textColor="#00CED1"
-            android:gravity="center"
-            android:clickable="true"
-            android:focusable="true"
-            android:visibility="gone" />
+            <TextView
+                android:id="@+id/btn_retake"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                android:layout_marginEnd="8dp"
+                android:background="@drawable/retake_button"
+                android:text="Retake"
+                android:textColor="#00CED1"
+                android:gravity="center"
+                android:clickable="true"
+                android:focusable="true"
+                android:visibility="gone" />
 
-        <!-- Generate playlist button (hidden first) -->
-        <TextView
-            android:id="@+id/btn_generate"
-            android:layout_width="0dp"
-            android:layout_height="48dp"
-            android:layout_weight="1"
-            android:layout_marginStart="8dp"
-            android:text="Generate playlist"
-            android:textColor="@android:color/black"
-            android:background="@drawable/generate_playlist_button"
-            android:gravity="center"
-            android:clickable="true"
-            android:focusable="true"
-            android:visibility="gone" />
-    </LinearLayout>
+            <TextView
+                android:id="@+id/btn_generate"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:text="Generate playlist"
+                android:textColor="@android:color/black"
+                android:background="@drawable/generate_playlist_button"
+                android:gravity="center"
+                android:clickable="true"
+                android:focusable="true"
+                android:visibility="gone" />
 
+        </LinearLayout>
+
+    </RelativeLayout>
 
 </LinearLayout>

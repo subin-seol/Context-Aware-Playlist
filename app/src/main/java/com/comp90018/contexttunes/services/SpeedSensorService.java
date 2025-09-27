@@ -1,161 +1,388 @@
 package com.comp90018.contexttunes.services;
 
-import android.app.Notification;
-import android.app.NotificationChannel;
-import android.app.NotificationManager;
+import android.Manifest;
 import android.app.Service;
 import android.content.Intent;
+import android.hardware.SensorManager;
+import android.location.Location;
 import android.os.Build;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
+import android.os.SystemClock;
 import android.util.Log;
 
 import androidx.annotation.Nullable;
-import androidx.core.app.NotificationCompat;
+import androidx.annotation.RequiresPermission;
+import androidx.core.app.ActivityCompat;
+import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
-import com.comp90018.contexttunes.R;
+import com.comp90018.contexttunes.BuildConfig;
 import com.comp90018.contexttunes.data.sensors.SpeedSensor;
 import com.comp90018.contexttunes.utils.AppEvents;
+import com.google.android.gms.location.FusedLocationProviderClient;
+import com.google.android.gms.location.Granularity;
+import com.google.android.gms.location.LocationCallback;
+import com.google.android.gms.location.LocationRequest;
+import com.google.android.gms.location.LocationResult;
+import com.google.android.gms.location.LocationServices;
+import com.google.android.gms.location.Priority;
+import com.google.android.gms.tasks.CancellationTokenSource;
 
 /**
- * Foreground service that performs an on-demand 5s speed burst.
- * - Steps-first; GPS fallback.
- * - Emits ACTION_SPEED_UPDATE with a 4-way tag and target BPM.
+ * Five-second measuring window with clear priority:
+ *   1) Prefer step-derived speed (cadence EMA) when step pipeline is alive.
+ *   2) Only if steps are NOT alive, fall back to GPS speed (gated & smoothed).
+ *
+ * Activity label depends ONLY on speed thresholds (more realistic cutoffs).
+ * "wheels" appears only at high speed AND no steps alive (sustained) to avoid false positives.
+ *
+ * Emits ACTION_SPEED_UPDATE ~1Hz during the window and once more at the end (EXTRA_IS_FINAL=true).
  */
 public class SpeedSensorService extends Service {
 
     private static final String TAG = "SpeedSensorService";
-    private static final String CHANNEL_ID = "ctx_speed_channel";
-    private static final int NOTI_ID = 1138;
 
-    // --- Same universal thresholds (km/h) ---
-    private static final float STILL_MAX_KMH = 0.7f;
-    private static final float WALK_MAX_KMH  = 6.0f;
-    private static final float RUN_MAX_KMH   = 15.0f;
+    // ===== Window / pacing =====
+    private static final long MEASURE_WINDOW_MS = 5_000L;  // fixed window requested by UI
+    private static final long LOOP_TICK_MS      = 200L;    // internal loop cadence
+    private static final long EMIT_PERIOD_MS    = 1_000L;  // throttle broadcasts to ~1Hz
 
-    // BPM mapping
-    private static final float CADENCE_MULTIPLIER = 2.0f; // bpm ~= cadence*2
-    private static final int   BPM_MIN = 60;
-    private static final int   BPM_MAX = 190;
-    private static final float CADENCE_MIN_SPM = 20f;
+    // ===== Scientifically grounded speed thresholds (km/h) =====
+    // References: gait studies & common run pace ranges
+    // - STILL:    < ~1.3 km/h (postural sway / micro-movements shouldn't count as walking)
+    // - WALKING:  ~1.3–8.3 km/h (covers slow stroll to brisk walk)
+    // - RUNNING:  >= ~8.3 km/h (≈ 7:14 min/km pace)
+    // - WHEELS:   >= 14 km/h sustained, and no steps alive (bike/scooter/skates, etc.)
+    private static final float STILL_MAX_KMH   = 1.3f;
+    private static final float RUN_MIN_KMH     = 8.3f;
+    private static final float WHEEL_MIN_KMH   = 14.0f;
 
-    private SpeedSensor sensor;
+    // Hysteresis (km/h) and label hold (ms) to reduce flicker around boundaries.
+    private static final float HYSTERESIS_KMH   = 0.6f;
+    private static final long  LABEL_MIN_HOLD_MS= 800L;
+
+    // Wheels requires a brief sustained period to confirm.
+    private static final long  WHEEL_CONFIRM_MS = 2_000L;
+
+    // ===== GPS guards & smoothing =====
+    private static final double GPS_EMA_ALPHA   = 0.30;  // EMA on km/h
+    private static final float  ACCURACY_MAX_M  = 25f;   // discard poor fixes
+    private static final float  STILL_EPS_M     = 1.5f;  // tiny move clamp
+    private static final double NEAR_ZERO_KMH   = 0.30;  // clamp near-zero jitter to 0
+
+    private Handler handler;
+    private FusedLocationProviderClient fused;
+    private LocationCallback gpsCb;
+
+    // Step pipeline (cadence + cadence→speed heuristic)
+    private SpeedSensor speedSensor;
+
+    // Window state
+    private boolean windowActive = false;
+    private long    windowEndMono = 0L;
+
+    // Emit state
+    private long lastEmitWall = 0L;
+    private long seq          = 0L;
+
+    // Chosen speed sources (km/h)
+    private float  stepSpeedKmh = 0f;   // from cadence EMA
+    private float  gpsSpeedKmh  = 0f;   // EMA of GPS speed
+    private boolean gpsGood     = false;
+    private boolean stepsAlive  = false;
+
+    // Label stability
+    private String lastLabel = "-";
+    private long   lastLabelAt = 0L;
+    private long   wheelSince  = 0L;
+
+    // GPS previous fix (for delta distance speed when loc.hasSpeed() is absent)
+    private Location lastLoc = null;
 
     @Override public void onCreate() {
         super.onCreate();
-        createChannel();
+        handler = new Handler(Looper.getMainLooper());
+        fused   = LocationServices.getFusedLocationProviderClient(this);
 
-        int smallIcon = R.drawable.ic_stat_speed; // ensure this drawable exists
-        Notification noti = new NotificationCompat.Builder(this, CHANNEL_ID)
-                .setSmallIcon(smallIcon)
-                .setContentTitle("Auto Mode · Speed Sensing")
-                .setContentText("Ready")
-                .setOnlyAlertOnce(true)
-                .setOngoing(true)
-                .setPriority(NotificationCompat.PRIORITY_LOW)
-                .setCategory(Notification.CATEGORY_SERVICE)
-                .build();
-        startForeground(NOTI_ID, noti);
-        Log.d(TAG, "startForeground posted");
+        // Start the step pipeline; SpeedSensor internally guards for ACTIVITY_RECOGNITION.
+        speedSensor = new SpeedSensor((SensorManager) getSystemService(SENSOR_SERVICE));
+        speedSensor.start();
 
-        sensor = new SpeedSensor(getApplicationContext());
+        handler.post(loop);
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
-        String action = (intent != null) ? intent.getAction() : null;
-        Log.d(TAG, "onStartCommand action=" + action);
-        if (AppEvents.ACTION_SPEED_SAMPLE_NOW.equals(action)) {
-            Log.d(TAG, "runBurst5s()");
-            runBurst5s();
+        if (intent != null && AppEvents.ACTION_SPEED_SAMPLE_NOW.equals(intent.getAction())) {
+            // Arm a fresh 5s window
+            windowActive   = true;
+            windowEndMono  = SystemClock.elapsedRealtime() + MEASURE_WINDOW_MS;
+
+            // Reset state for this window
+            seq = 0;
+            lastEmitWall = 0;
+            lastLabel = "-";
+            lastLabelAt = 0L;
+            wheelSince = 0L;
+
+            stepSpeedKmh = 0f;
+            gpsSpeedKmh  = 0f;
+            gpsGood      = false;
+            lastLoc      = null;
+
+            if (BuildConfig.DEBUG) Log.d(TAG, "Measuring window started");
         }
-        return START_STICKY;
+        return START_NOT_STICKY;
     }
 
-    private void emit(Intent i) {
-        // Use an explicit package-scoped broadcast so only our app receives it
-        i.setPackage(getPackageName());
+    private final Runnable loop = new Runnable() {
+        @Override public void run() {
+            long nowMono = SystemClock.elapsedRealtime();
+            long nowWall = System.currentTimeMillis();
+
+            if (!windowActive) {
+                stopGpsIfAny();
+                handler.postDelayed(this, LOOP_TICK_MS);
+                return;
+            }
+
+            // Window end → emit a final frame and go idle
+            if (nowMono >= windowEndMono) {
+                float chosen = chooseSpeedKmh();
+                String label = classifyBySpeed(chosen, stepsAlive, nowWall);
+                emit(label,
+                        chosen,
+                        stepsAlive ? (float) speedSensor.pollCadenceBPM() : Float.NaN,
+                        sourceOf(chosen),
+                        true,
+                        nowWall);
+                windowActive = false;
+                stopGpsIfAny();
+                if (BuildConfig.DEBUG) Log.d(TAG, "Measuring window ended");
+                handler.postDelayed(this, LOOP_TICK_MS);
+                return;
+            }
+
+            // 1) STEP-FIRST: if cadence alive → update stepSpeed, and keep GPS off
+            int spm = speedSensor.pollCadenceBPM();
+            stepsAlive = speedSensor.isCadenceAlive();
+            if (stepsAlive && spm > 0) {
+                stopGpsIfAny(); // not needed while steps are alive
+                stepSpeedKmh = (float) SpeedSensor.estimateSpeedFromCadenceEma(spm, stepSpeedKmh);
+            } else {
+                // 2) GPS FALLBACK: only when steps are not alive
+                if (ActivityCompat.checkSelfPermission(
+                        SpeedSensorService.this, Manifest.permission.ACCESS_FINE_LOCATION) ==
+                        android.content.pm.PackageManager.PERMISSION_GRANTED
+                        || ActivityCompat.checkSelfPermission(
+                        SpeedSensorService.this, Manifest.permission.ACCESS_COARSE_LOCATION) ==
+                        android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    // Permissions present → (re)start GPS if needed
+                    startGpsIfNeeded();
+                } else {
+                    // No location permission → ensure GPS is off
+                    stopGpsIfAny();
+                }
+            }
+
+            // Choose speed and classify label (label depends ONLY on speed)
+            float  chosen = chooseSpeedKmh();
+            String label  = classifyBySpeed(chosen, stepsAlive, nowWall);
+            maybeEmit(label,
+                    chosen,
+                    stepsAlive ? (float) spm : Float.NaN,
+                    sourceOf(chosen),
+                    nowWall);
+
+            handler.postDelayed(this, LOOP_TICK_MS);
+        }
+    };
+
+    /** Pick the active speed: step-derived when steps are alive; otherwise GPS if valid; else 0. */
+    private float chooseSpeedKmh() {
+        if (stepsAlive) return stepSpeedKmh;
+        return gpsGood ? gpsSpeedKmh : 0f;
+    }
+
+    /** Debug source string. */
+    private String sourceOf(float chosen) {
+        return stepsAlive ? "steps" : "gps";
+    }
+
+    // ===== GPS =====
+
+    @RequiresPermission(anyOf = {
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+    })
+    private void startGpsIfNeeded() {
+        if (gpsCb != null) return; // already running
+
+        boolean fine = ActivityCompat.checkSelfPermission(
+                this, Manifest.permission.ACCESS_FINE_LOCATION) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED;
+
+        LocationRequest.Builder b = new LocationRequest.Builder(
+                Priority.PRIORITY_HIGH_ACCURACY, /* interval */ 1000L)
+                .setMinUpdateIntervalMillis(500L)
+                .setMinUpdateDistanceMeters(0.5f)
+                .setWaitForAccurateLocation(true);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            b.setGranularity(Granularity.GRANULARITY_PERMISSION_LEVEL);
+        }
+        LocationRequest req = b.build();
+
+        gpsCb = new LocationCallback() {
+            @Override public void onLocationResult(LocationResult result) {
+                Location loc = result.getLastLocation();
+                if (loc != null) handleLocation(loc, System.currentTimeMillis());
+            }
+        };
+
+        //noinspection MissingPermission
+        fused.requestLocationUpdates(req, gpsCb, Looper.getMainLooper());
+
+        // One-shot for faster first fix inside the window
+        try {
+            CancellationTokenSource cts = new CancellationTokenSource();
+            fused.getCurrentLocation(
+                    fine ? Priority.PRIORITY_HIGH_ACCURACY : Priority.PRIORITY_BALANCED_POWER_ACCURACY,
+                    cts.getToken()
+            ).addOnSuccessListener(loc -> { if (loc != null) handleLocation(loc, System.currentTimeMillis()); });
+        } catch (Throwable ignore) {}
+    }
+
+    private void stopGpsIfAny() {
+        if (gpsCb != null) {
+            fused.removeLocationUpdates(gpsCb);
+            gpsCb = null;
+        }
+        lastLoc = null;
+        // keep gpsSpeedKmh so UI can still display last EMA within the window
+    }
+
+    /** Convert a location fix into an EMA speed with guards (accuracy / tiny move / near-zero). */
+    private void handleLocation(Location loc, long nowWall) {
+        // 1) accuracy gate
+        if (loc.hasAccuracy() && loc.getAccuracy() > ACCURACY_MAX_M) return;
+
+        // 2) raw speed (prefer sensor speed; else distance-over-time)
+        double vMs;
+        float  moved = 0f;
+        long   dtMs  = 0L;
+
+        if (loc.hasSpeed()) {
+            vMs = Math.max(0.0, loc.getSpeed());
+        } else if (lastLoc != null) {
+            moved = loc.distanceTo(lastLoc);
+            dtMs  = Math.max(1L, loc.getTime() - lastLoc.getTime());
+            vMs   = dtMs > 0 ? moved / (dtMs / 1000.0) : 0.0;
+        } else {
+            vMs = 0.0;
+        }
+
+        // 3) tiny movement clamp (reduce jitter to 0)
+        if (lastLoc != null && moved > 0 && moved < STILL_EPS_M && dtMs >= 800) {
+            vMs = 0.0;
+        }
+
+        // 4) to km/h + near-zero clamp
+        double vKmh = vMs * 3.6;
+        if (vKmh < NEAR_ZERO_KMH) vKmh = 0.0;
+
+        // 5) EMA
+        gpsSpeedKmh = (float) (GPS_EMA_ALPHA * vKmh + (1.0 - GPS_EMA_ALPHA) * gpsSpeedKmh);
+        gpsGood     = true;
+        lastLoc     = loc;
+    }
+
+    // ===== Classify & emit =====
+
+    /**
+     * Label depends ONLY on speed bands; “wheels” requires high speed AND no steps alive,
+     * sustained for WHEEL_CONFIRM_MS (or immediately if very fast).
+     */
+    private String classifyBySpeed(float vKmh, boolean stepsAliveNow, long nowWall) {
+        // wheels (sustained, no steps)
+        if (!stepsAliveNow && vKmh >= WHEEL_MIN_KMH) {
+            if (wheelSince == 0L) wheelSince = nowWall;
+            if ((nowWall - wheelSince) >= WHEEL_CONFIRM_MS || vKmh >= 20f) {
+                return applyHold("wheels", nowWall);
+            }
+            // While confirming, fall through to running for UI continuity.
+        } else {
+            wheelSince = 0L;
+        }
+
+        // hysteresis around boundaries to avoid flicker
+        if ("running".equals(lastLabel) && vKmh >= (RUN_MIN_KMH - HYSTERESIS_KMH)) {
+            return applyHold("running", nowWall);
+        }
+        if ("walking".equals(lastLabel)
+                && vKmh >= (STILL_MAX_KMH + HYSTERESIS_KMH)
+                && vKmh <  (RUN_MIN_KMH   + HYSTERESIS_KMH)) {
+            return applyHold("walking", nowWall);
+        }
+
+        if (vKmh < STILL_MAX_KMH)  return applyHold("still",   nowWall);
+        if (vKmh >= RUN_MIN_KMH)   return applyHold("running", nowWall);
+        return applyHold("walking", nowWall);
+    }
+
+    /** Enforce a minimum hold time when switching labels. */
+    private String applyHold(String candidate, long nowWall) {
+        if (!candidate.equals(lastLabel) && (nowWall - lastLabelAt) < LABEL_MIN_HOLD_MS) {
+            return lastLabel;
+        }
+        if (!candidate.equals(lastLabel)) {
+            lastLabel = candidate;
+            lastLabelAt = nowWall;
+        }
+        return lastLabel;
+    }
+
+    private void maybeEmit(String label, float speedKmh, Float cadenceSpm, String source, long nowWall) {
+        if ((nowWall - lastEmitWall) < EMIT_PERIOD_MS) return;
+        emit(label, speedKmh, cadenceSpm, source, false, nowWall);
+    }
+
+    /** Broadcast one frame to both LocalBroadcastManager and the global receiver path. */
+    private void emit(String label,
+                      float speedKmh,
+                      Float cadenceSpm,
+                      String source,
+                      boolean isFinal,
+                      long nowWall) {
+        lastEmitWall = nowWall;
+        seq++;
+
+        Intent i = new Intent(AppEvents.ACTION_SPEED_UPDATE);
+        i.putExtra(AppEvents.EXTRA_SPEED_KMH, speedKmh);
+        i.putExtra(AppEvents.EXTRA_CADENCE_SPM, cadenceSpm == null ? Float.NaN : cadenceSpm);
+        i.putExtra(AppEvents.EXTRA_ACTIVITY, label == null ? "-" : label);
+        i.putExtra(AppEvents.EXTRA_SOURCE, source);
+        i.putExtra(AppEvents.EXTRA_SEQ, seq);
+        i.putExtra(AppEvents.EXTRA_IS_FINAL, isFinal);
+
+        LocalBroadcastManager.getInstance(this).sendBroadcast(i);
         sendBroadcast(i);
-    }
 
-    private void runBurst5s() {
-        sensor.startBurstSession(5000L, new SpeedSensor.Callback() {
-            @Override public void onMeasurement(SpeedSensor.Measurement m) {
-                float kmh = m.speedMps * 3.6f;
-                String tag = classifyTag(kmh, m.cadenceSpm, m.source);
-                int targetBpm = bpmFromCadenceOrSpeed(m.cadenceSpm, kmh);
-
-                Intent i = new Intent(AppEvents.ACTION_SPEED_UPDATE);
-                i.putExtra(AppEvents.EXTRA_SPEED_MPS, m.speedMps);
-                i.putExtra(AppEvents.EXTRA_SPEED_KMH, kmh);
-                if (m.cadenceSpm != null) i.putExtra(AppEvents.EXTRA_CADENCE_SPM, m.cadenceSpm);
-                i.putExtra(AppEvents.EXTRA_ACTIVITY, m.activity);
-                i.putExtra(AppEvents.EXTRA_TARGET_BPM, targetBpm);
-                i.putExtra(AppEvents.EXTRA_SOURCE, m.source);
-                i.putExtra(AppEvents.EXTRA_SPEED_TAG, tag);
-
-                Log.d(TAG, "emit: " + String.format("~%.2f km/h · %s (src=%s)", kmh, tag, m.source));
-                emit(i);
-
-                updateNotification(String.format("~%.1f km/h · %s", kmh, tag));
-            }
-            @Override public void onError(Exception e) {
-                Log.e(TAG, "measurement error", e);
-                updateNotification("No measurement");
-            }
-        });
-    }
-
-    private void updateNotification(String subtitle) {
-        int smallIcon = R.drawable.ic_stat_speed;
-        Notification noti = new NotificationCompat.Builder(this, CHANNEL_ID)
-                .setSmallIcon(smallIcon)
-                .setContentTitle("Auto Mode · Speed Sensing")
-                .setContentText(subtitle)
-                .setOnlyAlertOnce(true)
-                .setOngoing(true)
-                .setPriority(NotificationCompat.PRIORITY_LOW)
-                .setCategory(Notification.CATEGORY_SERVICE)
-                .build();
-        startForeground(NOTI_ID, noti);
-    }
-
-    private void createChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel ch = new NotificationChannel(
-                    CHANNEL_ID, "Speed Sensor", NotificationManager.IMPORTANCE_LOW);
-            ch.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
-            NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-            if (nm != null) nm.createNotificationChannel(ch);
+        if (BuildConfig.DEBUG) {
+            Log.d(TAG, (isFinal ? "emit[FINAL]" : "emit")
+                    + " seq=" + seq
+                    + " label=" + label
+                    + " kmh=" + String.format("%.2f", speedKmh)
+                    + " spm=" + (cadenceSpm == null ? "NaN" : String.format("%.0f", cadenceSpm))
+                    + " src=" + source);
         }
     }
 
     @Nullable @Override public IBinder onBind(Intent intent) { return null; }
 
-    // ---- tag + BPM mapping (must mirror thresholds above) ----
-    private static String classifyTag(float speedKmh, @Nullable Float cadenceSpm, String source) {
-        // Always treat very low speed as STILL
-        if (speedKmh < STILL_MAX_KMH) return "STILL";
-
-        // Prefer cadence when present: never output WHEELS from steps
-        if (cadenceSpm != null && cadenceSpm >= CADENCE_MIN_SPM) {
-            return (speedKmh >= WALK_MAX_KMH) ? "RUN" : "WALK";
-        }
-
-        // GPS-only: allow WHEELS at high speed
-        if (speedKmh >= RUN_MAX_KMH && !"steps".equals(source)) return "WHEELS";
-        if (speedKmh >= WALK_MAX_KMH) return "RUN";
-        return "WALK";
-    }
-
-    private static int bpmFromCadenceOrSpeed(@Nullable Float cadenceSpm, float speedKmh) {
-        int bpm;
-        if (cadenceSpm != null && cadenceSpm >= CADENCE_MIN_SPM) {
-            bpm = Math.round(cadenceSpm * CADENCE_MULTIPLIER);
-        } else {
-            if (speedKmh < STILL_MAX_KMH)      bpm = 70;   // STILL
-            else if (speedKmh < WALK_MAX_KMH)  bpm = 100;  // WALK
-            else if (speedKmh < RUN_MAX_KMH)   bpm = 155;  // RUN
-            else                               bpm = 110;  // WHEELS cruising
-        }
-        return Math.max(BPM_MIN, Math.min(BPM_MAX, bpm));
+    @Override public void onDestroy() {
+        handler.removeCallbacksAndMessages(null);
+        stopGpsIfAny();
+        if (speedSensor != null) speedSensor.stop();
+        super.onDestroy();
     }
 }
