@@ -72,7 +72,7 @@ public class MainActivity extends AppCompatActivity {
                 selectedFragment = new PlaylistFragment();
             } else if (id == R.id.nav_settings){
                 // Go to settings
-//                selectedFragment =
+                selectedFragment = new com.comp90018.contexttunes.ui.settings.SettingsFragment();
             }
 
             if (selectedFragment != null){

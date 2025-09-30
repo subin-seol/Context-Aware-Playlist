@@ -10,6 +10,7 @@ import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
@@ -34,10 +35,14 @@ import com.comp90018.contexttunes.databinding.FragmentHomeBinding;
 import com.comp90018.contexttunes.domain.Context;
 import com.comp90018.contexttunes.domain.Recommendation;
 import com.comp90018.contexttunes.domain.RuleEngine;
+import com.comp90018.contexttunes.utils.SettingsManager;
 import com.google.android.libraries.places.api.model.Place;
 import com.comp90018.contexttunes.ui.viewModel.SharedCameraViewModel;
 
 import com.comp90018.contexttunes.utils.PlaylistOpener;
+import java.util.ArrayList;
+
+
 
 import java.util.List;
 
@@ -46,7 +51,7 @@ public class HomeFragment extends Fragment {
     private static final int LOCATION_PERMISSION_REQUEST_CODE = 100;
 
     private FragmentHomeBinding binding;
-
+    private SettingsManager settingsManager;
     private LightSensor lightSensor;
     private LocationSensor locationSensor;
     private GooglePlacesAPI googlePlacesAPI;
@@ -55,6 +60,9 @@ public class HomeFragment extends Fragment {
     private Recommendation currentRecommendation = null;
     private WeatherState currentWeather = WeatherState.UNKNOWN;
     private LightBucket currentLightBucket = LightBucket.UNKNOWN;
+
+    private List<Recommendation> currentRecommendations = new ArrayList<>();
+    private boolean recommendationsGenerated = false;
 
     @Nullable
     @Override
@@ -68,6 +76,9 @@ public class HomeFragment extends Fragment {
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
 
+        // Init settings manager
+        settingsManager = new SettingsManager(requireContext());
+
         // Get the shared ViewModel
         SharedCameraViewModel viewModel = new ViewModelProvider(requireActivity()).get(SharedCameraViewModel.class);
 
@@ -78,24 +89,18 @@ public class HomeFragment extends Fragment {
         updateWeatherStatus(WeatherState.UNKNOWN);
 
         // --- LIGHT SENSOR WIRING ---
-        lightSensor = new LightSensor(requireContext(), bucket -> {
-            if (binding == null) return;
-            requireActivity().runOnUiThread(() -> {
-                // Update light sensor display
-                updateLightStatus(bucket);
-                // Update recommendation when light changes
-                updateRecommendation(bucket);
+        // Only initialize if enabled in settings
+        SettingsManager settingsManager = new SettingsManager(requireContext());
+        if (settingsManager.isLightEnabled()) {
+            lightSensor = new LightSensor(requireContext(), bucket -> {
+                if (binding == null) return;
+                requireActivity().runOnUiThread(() -> {
+                    updateLightStatus(bucket);
+                    updateRecommendation(bucket);
+                });
             });
-        });
+        }
 
-        // --- LIGHT SENSOR ---
-        lightSensor = new LightSensor(requireContext(), bucket -> {
-            if (binding == null) return;
-            requireActivity().runOnUiThread(() -> {
-                updateLightStatus(bucket);
-                updateRecommendation(bucket);
-            });
-        });
 
         // --- LOCATION SENSOR + PLACES API ---
         locationSensor = new LocationSensor(requireActivity());
@@ -103,7 +108,12 @@ public class HomeFragment extends Fragment {
 
         // --- WEATHER SERVICE ---
         mockWeatherService = new MockWeatherService(requireContext());
-        checkAndRequestLocationPermission(); // Handles permission + weather fetch
+        // Only fetch weather if location is enabled in settings
+        if (settingsManager.isLocationEnabled()) {
+            checkAndRequestLocationPermission(); // Handles permission + weather fetch
+        } else {
+            updateWeatherStatus(WeatherState.UNKNOWN);
+        }
 
         // Camera button -> switch to Snap tab
         binding.btnSnap.setOnClickListener(v -> {
@@ -112,13 +122,13 @@ public class HomeFragment extends Fragment {
         });
 
         // GO button -> trigger recommendation
-        // NEW: Update recommendation when light changes
         binding.btnGo.setOnClickListener(v -> {
-            if (currentRecommendation != null) {
-                PlaylistOpener.openPlaylist(requireContext(), currentRecommendation.playlist);
-            } else {
-                Toast.makeText(requireContext(), "Generating your vibe…", Toast.LENGTH_SHORT).show();
-            }
+            generateRecommendations();
+        });
+
+        // Regenerate button
+        binding.btnRegenerate.setOnClickListener(v -> {
+            generateRecommendations();
         });
 
         // Add listener for image preview button
@@ -142,6 +152,11 @@ public class HomeFragment extends Fragment {
 
         // Button to fetch places
         binding.btnFetchPlaces.setOnClickListener(v -> {
+            if (!settingsManager.isLocationEnabled()) {
+                Toast.makeText(requireContext(), "Location services disabled in settings", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
             locationSensor.getCurrentLocation(location -> {
                 if (location != null) {
                     Log.d(TAG, "Got location: " + location.getLatitude() + ", " + location.getLongitude());
@@ -213,16 +228,19 @@ public class HomeFragment extends Fragment {
   
       // --- RECOMMENDATION ---
       private void updateRecommendation(@Nullable LightBucket lightBucket) {
-        if (lightBucket != null) currentLightBucket = lightBucket;
+          if (lightBucket != null) currentLightBucket = lightBucket;
 
-        String timeOfDay = RuleEngine.getCurrentTimeOfDay();
-        String activity = "still"; // mock
-        Context context = new Context(currentLightBucket, timeOfDay, activity, currentWeather);
+          // Only auto-update if recommendations haven't been generated yet
+          if (!recommendationsGenerated) {
+              String timeOfDay = RuleEngine.getCurrentTimeOfDay();
+              String activity = "still";
+              Context context = new Context(currentLightBucket, timeOfDay, activity, currentWeather);
 
-        Recommendation recommendation = RuleEngine.getRecommendation(context);
-        binding.welcomeSubtitle.setText(recommendation.reason);
-        currentRecommendation = recommendation;
-    }
+              Recommendation recommendation = RuleEngine.getRecommendation(context);
+              binding.welcomeSubtitle.setText(recommendation.reason);
+              currentRecommendation = recommendation;
+          }
+      }
   
   // --- LIGHT & WEATHER UI
   private void updateWeatherStatus(WeatherState weather) {
@@ -308,9 +326,6 @@ public class HomeFragment extends Fragment {
                 updateWeatherStatus(WeatherState.UNKNOWN);
                 Toast.makeText(requireContext(), "Location permission needed for weather updates", Toast.LENGTH_SHORT).show();
             }
-        } else {
-            // Forward to LocationSensor for places API permissions
-            locationSensor.handlePermissionResult(requestCode, grantResults, this::fetchNearbyPlaces);
         }
     }
   
@@ -329,10 +344,155 @@ public class HomeFragment extends Fragment {
         }
     }
 
+    /**
+     * Generate multiple recommendations and update UI to show them
+     */
+    private void generateRecommendations() {
+        String timeOfDay = RuleEngine.getCurrentTimeOfDay();
+        String activity = "still"; // mock
+        Context context = new Context(currentLightBucket, timeOfDay, activity, currentWeather);
+
+        // Get multiple recommendations
+        currentRecommendations = RuleEngine.getMultipleRecommendations(context);
+        recommendationsGenerated = true;
+
+        // Update UI to show generated state
+        showGeneratedState();
+    }
+
+    /**
+     * Show the "after generation" UI state with context tags and playlist cards
+     */
+    private void showGeneratedState() {
+        if (binding == null) return;
+
+        // hide the "Create My Vibe" card
+        binding.createVibeCard.setVisibility(View.GONE);
+
+        // show the "Current Mood" card
+        binding.currentMoodCard.setVisibility(View.VISIBLE);
+        populateContextTags();
+
+        // show playlist suggestions section
+        binding.playlistSuggestionsSection.setVisibility(View.VISIBLE);
+        populatePlaylistCards();
+
+        // show regenerate button
+        binding.btnRegenerate.setVisibility(View.VISIBLE);
+    }
+
+    //Show the "before generation" UI state
+    private void showBeforeGenerationState() {
+        if (binding == null) return;
+
+        // SHOW the "Create My Vibe" card
+        binding.createVibeCard.setVisibility(View.VISIBLE);
+        binding.welcomeSubtitle.setVisibility(View.VISIBLE);
+
+        // HIDE the "after generation" elements
+        binding.currentMoodCard.setVisibility(View.GONE);
+        binding.playlistSuggestionsSection.setVisibility(View.GONE);
+        binding.btnRegenerate.setVisibility(View.GONE);
+
+        recommendationsGenerated = false;
+    }
+
+
+    //Populate context tags based on current context
+    private void populateContextTags() {
+        binding.contextTagsGroup.removeAllViews();
+
+        // Add activity tag
+        addContextChip("Still", android.graphics.Color.parseColor("#2D3748"));
+
+        // Add light level tag
+        String lightText = "";
+        switch (currentLightBucket) {
+            case DIM:
+                lightText = "Dim";
+                break;
+            case NORMAL:
+                lightText = "Normal";
+                break;
+            case BRIGHT:
+                lightText = "Bright";
+                break;
+            case UNKNOWN:
+                lightText = "Unknown";
+                break;
+        }
+        if (!lightText.isEmpty() && currentLightBucket != LightBucket.UNKNOWN) {
+            addContextChip(lightText, android.graphics.Color.parseColor("#2D3748"));
+        }
+
+        // Add weather tag
+        String weatherText = "";
+        switch (currentWeather) {
+            case SUNNY:
+                weatherText = "Sunny";
+                break;
+            case CLOUDY:
+                weatherText = "Cloudy";
+                break;
+            case RAINY:
+                weatherText = "Rainy";
+                break;
+        }
+        if (!weatherText.isEmpty() && currentWeather != WeatherState.UNKNOWN) {
+            addContextChip(weatherText, android.graphics.Color.parseColor("#2D3748"));
+        }
+
+        // Add time of day tag (capitalize first letter)
+        String timeOfDay = RuleEngine.getCurrentTimeOfDay();
+        String capitalizedTime = timeOfDay.substring(0, 1).toUpperCase() + timeOfDay.substring(1);
+        addContextChip(capitalizedTime, android.graphics.Color.parseColor("#2D3748"));
+    }
+
+    //Add a single context chip to the chip group
+    private void addContextChip(String text, int backgroundColor) {
+        com.google.android.material.chip.Chip chip = new com.google.android.material.chip.Chip(requireContext());
+        chip.setText(text);
+        chip.setChipBackgroundColor(android.content.res.ColorStateList.valueOf(backgroundColor));
+        chip.setTextColor(ContextCompat.getColor(requireContext(), com.comp90018.contexttunes.R.color.text_primary));
+        chip.setClickable(false);
+        chip.setChipCornerRadius(24f);
+        binding.contextTagsGroup.addView(chip);
+    }
+
+    // Populate playlist cards based on current recommendations
+
+    private void populatePlaylistCards() {
+        binding.playlistCardsContainer.removeAllViews();
+
+        for (Recommendation recommendation : currentRecommendations) {
+            View cardView = getLayoutInflater().inflate(
+                    com.comp90018.contexttunes.R.layout.item_playlist_card,
+                    binding.playlistCardsContainer,
+                    false
+            );
+
+            TextView playlistName = cardView.findViewById(com.comp90018.contexttunes.R.id.playlistName);
+            TextView playlistReason = cardView.findViewById(com.comp90018.contexttunes.R.id.playlistReason);
+            com.google.android.material.button.MaterialButton btnPlay = cardView.findViewById(com.comp90018.contexttunes.R.id.btnPlay);
+
+            playlistName.setText(recommendation.playlist.name);
+            playlistReason.setText(recommendation.reason);
+
+            btnPlay.setOnClickListener(v -> {
+                PlaylistOpener.openPlaylist(requireContext(), recommendation.playlist);
+            });
+
+            binding.playlistCardsContainer.addView(cardView);
+        }
+    }
+
     @Override
     public void onStart() {
         super.onStart();
-        if (lightSensor != null) lightSensor.start(); // begin receiving updates
+        SettingsManager settingsManager = new SettingsManager(requireContext());
+        if (lightSensor != null && settingsManager.isLightEnabled()) {
+            lightSensor.start();
+        }
     }
 
     @Override

@@ -8,6 +8,7 @@ import android.provider.MediaStore;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.Toast;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
@@ -20,6 +21,7 @@ import com.comp90018.contexttunes.MainActivity;
 import com.comp90018.contexttunes.data.sensors.CameraSensor;
 import com.comp90018.contexttunes.databinding.FragmentSnapBinding;
 import com.comp90018.contexttunes.ui.viewModel.SharedCameraViewModel;
+import com.comp90018.contexttunes.utils.SettingsManager;
 
 import java.io.IOException;
 
@@ -70,6 +72,19 @@ public class SnapFragment extends Fragment {
     @Override
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
+
+        // Check camera permission in settings first
+        SettingsManager settingsManager = new SettingsManager(requireContext());
+        if (!settingsManager.isCameraEnabled()) {
+            // Post the navigation to avoid fragment transaction issues
+            view.post(() -> {
+                Toast.makeText(requireContext(),
+                        "Camera is disabled in settings",
+                        Toast.LENGTH_LONG).show();
+                ((MainActivity) requireActivity()).goToHomeTab();
+            });
+            return;
+        }
 
         SharedCameraViewModel viewModel = new ViewModelProvider(requireActivity())
                 .get(SharedCameraViewModel.class);
@@ -153,7 +168,9 @@ public class SnapFragment extends Fragment {
     @Override
     public void onDestroyView() {
         super.onDestroyView();
-        cameraSensor.stopCameraPreview();
+        if (cameraSensor != null) {
+            cameraSensor.stopCameraPreview();
+        }
         ((MainActivity) requireActivity()).setBottomNavVisibility(true);
         binding = null;
     }
