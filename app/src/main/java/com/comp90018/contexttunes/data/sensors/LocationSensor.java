@@ -69,18 +69,16 @@ public class LocationSensor {
      *
      * @param callback Consumer<Location> to receive the location result.
      */
+
+    /** Requires ACCESS_FINE_LOCATION to already be granted. */
     public void getCurrentLocation(@NonNull Consumer<Location> callback) {
-        // Always request a new location update for active sensing
-        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-            requestLocationUpdate(callback);
-        } else {
-            // Request permission if not granted
-            if (context instanceof Activity) {
-                ActivityCompat.requestPermissions((Activity) context, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, REQUEST_CODE_LOCATION);
-            } else {
-                Log.e("LocationSensor", "Context is not an Activity. Cannot request permissions.");
-            }
+        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
+                != PackageManager.PERMISSION_GRANTED) {
+            Log.e("LocationSensor", "Permission not granted. Call PermissionManager.requestLocation() first.");
+            callback.accept(null);
+            return;
         }
+        requestLocationUpdate(callback);
     }
 
     // Request a location update if last location is unavailable
@@ -105,25 +103,31 @@ public class LocationSensor {
             }
         };
 
-        // Explicitly check for location permission before requesting updates
-        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-            fusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, null);
+        if (ActivityCompat.checkSelfPermission(context,
+                Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+            try {
+                fusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, null);
+            } catch (SecurityException se) {
+                Log.e("LocationSensor", "Permission revoked mid-call", se);
+                callback.accept(null);
+            }
         } else {
             Log.e("LocationSensor", "Location permission not granted. Cannot request location updates.");
+            callback.accept(null);
         }
     }
 
-    /**
-     * Call this from your Activity's onRequestPermissionsResult to handle permission result.
-     * Example:
-     *   @Override
-     *   public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
-     *       locationSensor.handlePermissionResult(requestCode, grantResults, (location) -> { ... });
-     *   }
-     */
-    public void handlePermissionResult(int requestCode, @NonNull int[] grantResults, @NonNull Consumer<Location> callback) {
-        if (requestCode == REQUEST_CODE_LOCATION && grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-            getCurrentLocation(callback);
-        }
-    }
+//    /**
+//     * Call this from your Activity's onRequestPermissionsResult to handle permission result.
+//     * Example:
+//     *   @Override
+//     *   public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+//     *       locationSensor.handlePermissionResult(requestCode, grantResults, (location) -> { ... });
+//     *   }
+//     */
+//    public void handlePermissionResult(int requestCode, @NonNull int[] grantResults, @NonNull Consumer<Location> callback) {
+//        if (requestCode == REQUEST_CODE_LOCATION && grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+//            getCurrentLocation(callback);
+//        }
+//    }
 }

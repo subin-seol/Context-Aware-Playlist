@@ -1,7 +1,5 @@
 package com.comp90018.contexttunes.ui.settings;
 
-import android.Manifest;
-import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -10,12 +8,12 @@ import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import androidx.fragment.app.Fragment;
 
 import com.comp90018.contexttunes.data.sensors.LocationSensor;
 import com.comp90018.contexttunes.databinding.FragmentSettingsBinding;
+import com.comp90018.contexttunes.utils.PermissionManager;
 import com.comp90018.contexttunes.utils.SettingsManager;
 
 /**
@@ -29,15 +27,13 @@ import com.comp90018.contexttunes.utils.SettingsManager;
  * - Account management
  */
 public class SettingsFragment extends Fragment {
-
-    private static final int LOCATION_PERMISSION_REQUEST = 200;
-    private static final int CAMERA_PERMISSION_REQUEST = 201;
+    private static final String KEY_PENDING_TAG = "pending_location_tag";
 
     private FragmentSettingsBinding binding;
     private SettingsManager settingsManager;
     private LocationSensor locationSensor;
 
-    // Track which location button was clicked for permission callback
+    // Used to resume tagging after the user grants permission
     private String pendingLocationTag = null;
 
     @Nullable
@@ -57,15 +53,27 @@ public class SettingsFragment extends Fragment {
         settingsManager = new SettingsManager(requireContext());
         locationSensor = new LocationSensor(requireContext());
 
+        if (savedInstanceState != null) {
+            pendingLocationTag = savedInstanceState.getString("pendingLocationTag", null);
+        }
+
         // Load saved settings
         loadSettings();
 
         // Setup listeners
         setupDetectionModeListeners();
-        setupSensorPermissionListeners();
-        setupLocationTaggingListeners();
+        setupSensorToggleListeners();   // preferances only, no OS prompts here
+        setupLocationTaggingListeners();    // point-of-use permission here
         setupNotificationListeners();
         setupAccountListeners();
+    }
+
+    @Override
+    public void onSaveInstanceState(@NonNull Bundle outState) {
+        super.onSaveInstanceState(outState);
+        if (pendingLocationTag != null) {
+            outState.putString(KEY_PENDING_TAG, pendingLocationTag);
+        }
     }
 
     /**
@@ -77,7 +85,7 @@ public class SettingsFragment extends Fragment {
         binding.switchPassive.setChecked(isPassive);
         binding.switchActive.setChecked(!isPassive);
 
-        // Sensor Permissions
+        // Sensor "allowed" prefs
         binding.switchLocation.setChecked(settingsManager.isLocationEnabled());
         binding.switchCamera.setChecked(settingsManager.isCameraEnabled());
         binding.switchLight.setChecked(settingsManager.isLightEnabled());
@@ -87,8 +95,9 @@ public class SettingsFragment extends Fragment {
         binding.switchPlaylistSuggestions.setChecked(settingsManager.isPlaylistSuggestionsEnabled());
         binding.switchContextChanges.setChecked(settingsManager.isContextChangesEnabled());
 
-        // Update location tag button states
+        // Button visual state + enabled/disabled depending on Location toggle
         updateLocationTagButtons();
+        updateTaggingEnabledState();
     }
 
     /**
@@ -120,28 +129,33 @@ public class SettingsFragment extends Fragment {
     }
 
     /**
-     * Setup Sensor Permission toggle listeners.
-     * These control which sensors the app is allowed to use.
+     * Sensor toggles: store preference only.
+     * Runtime permission will be requested at point-of-use (e.g., Snap/Home/Tagging).
      */
-    private void setupSensorPermissionListeners() {
+    private void setupSensorToggleListeners() {
         binding.switchLocation.setOnCheckedChangeListener((buttonView, isChecked) -> {
             settingsManager.setLocationEnabled(isChecked);
-            if (isChecked && !hasLocationPermission()) {
-                requestLocationPermission();
+            if (isChecked) {
+                // No runtime request here. Inform user.
+                Toast.makeText(requireContext(),
+                        "Location enabled. We'll ask for permission when needed.",
+                        Toast.LENGTH_SHORT).show();
+            } else {
+                Toast.makeText(requireContext(), "Location disabled", Toast.LENGTH_SHORT).show();
             }
-            Toast.makeText(requireContext(),
-                    "Location " + (isChecked ? "enabled" : "disabled"),
-                    Toast.LENGTH_SHORT).show();
+
+            updateTaggingEnabledState();    // enable/disable tag buttons to match toggle
         });
 
         binding.switchCamera.setOnCheckedChangeListener((buttonView, isChecked) -> {
             settingsManager.setCameraEnabled(isChecked);
-            if (isChecked && !hasCameraPermission()) {
-                requestCameraPermission();
+            if (isChecked) {
+                Toast.makeText(requireContext(),
+                        "Camera enabled. We'll ask for permission when needed.",
+                        Toast.LENGTH_SHORT).show();
+            } else {
+                Toast.makeText(requireContext(), "Camera disabled", Toast.LENGTH_SHORT).show();
             }
-            Toast.makeText(requireContext(),
-                    "Camera " + (isChecked ? "enabled" : "disabled"),
-                    Toast.LENGTH_SHORT).show();
         });
 
         binding.switchLight.setOnCheckedChangeListener((buttonView, isChecked) -> {
@@ -184,10 +198,17 @@ public class SettingsFragment extends Fragment {
      * Tag the user's current location with a label.
      * Requires location permission.
      */
-    private void tagCurrentLocation(String tag) {
-        if (!hasLocationPermission()) {
+    private void tagCurrentLocation(@NonNull String tag) {
+        if (!settingsManager.isLocationEnabled()) {
+            Toast.makeText(requireContext(),
+                    "Enable Location in settings to tag locations",
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        if (!PermissionManager.hasLocationPermission(requireContext())) {
             pendingLocationTag = tag;
-            requestLocationPermission();
+            PermissionManager.requestLocation(this);
             return;
         }
 
@@ -216,7 +237,7 @@ public class SettingsFragment extends Fragment {
      * Clear a saved location tag.
      * Returns true to indicate long press was handled.
      */
-    private boolean clearLocationTag(String tag) {
+    private boolean clearLocationTag(@NonNull String tag) {
         if (settingsManager.hasLocation(tag)) {
             settingsManager.clearLocation(tag);
             Toast.makeText(requireContext(), tag + " location cleared", Toast.LENGTH_SHORT).show();
@@ -255,6 +276,17 @@ public class SettingsFragment extends Fragment {
         }
     }
 
+    /** Enable/disable tagging buttons if the Location toggle is off. */
+    private void updateTaggingEnabledState() {
+        boolean enabled = settingsManager.isLocationEnabled();
+        binding.btnTagHome.setEnabled(enabled);
+        binding.btnTagGym.setEnabled(enabled);
+        binding.btnTagOffice.setEnabled(enabled);
+        binding.btnTagLibrary.setEnabled(enabled);
+        binding.btnTagPark.setEnabled(enabled);
+        binding.btnTagCafe.setEnabled(enabled);
+    }
+
     /**
      * Setup Notification preference listeners
      */
@@ -291,58 +323,29 @@ public class SettingsFragment extends Fragment {
         });
     }
 
-    // ===== Permission Helpers =====
-
-    private boolean hasLocationPermission() {
-        return ContextCompat.checkSelfPermission(requireContext(),
-                Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
-    }
-
-    private boolean hasCameraPermission() {
-        return ContextCompat.checkSelfPermission(requireContext(),
-                Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
-    }
-
-    private void requestLocationPermission() {
-        ActivityCompat.requestPermissions(requireActivity(),
-                new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
-                LOCATION_PERMISSION_REQUEST);
-    }
-
-    private void requestCameraPermission() {
-        ActivityCompat.requestPermissions(requireActivity(),
-                new String[]{Manifest.permission.CAMERA},
-                CAMERA_PERMISSION_REQUEST);
-    }
-
+    // --- Permission callback (resume pending tag) ---
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions,
                                            @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
 
-        if (requestCode == LOCATION_PERMISSION_REQUEST) {
-            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                Toast.makeText(requireContext(), "Location permission granted", Toast.LENGTH_SHORT).show();
+        if (requestCode == PermissionManager.REQ_LOCATION) {
+            boolean granted = grantResults.length > 0
+                    && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED;
 
-                // If there's a pending location tag, complete it now
-                if (pendingLocationTag != null) {
-                    tagCurrentLocation(pendingLocationTag);
-                    pendingLocationTag = null;
-                }
-            } else {
+            if (!granted) {
                 Toast.makeText(requireContext(),
-                        "Location permission needed for this feature",
+                        "Location permission denied. Cannot tag location.",
                         Toast.LENGTH_SHORT).show();
-                binding.switchLocation.setChecked(false);
+                pendingLocationTag = null;
+                return;
             }
-        } else if (requestCode == CAMERA_PERMISSION_REQUEST) {
-            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                Toast.makeText(requireContext(), "Camera permission granted", Toast.LENGTH_SHORT).show();
-            } else {
-                Toast.makeText(requireContext(),
-                        "Camera permission needed for this feature",
-                        Toast.LENGTH_SHORT).show();
-                binding.switchCamera.setChecked(false);
+
+            // Permission granted → resume the original tag action if we have one
+            if (pendingLocationTag != null) {
+                String tag = pendingLocationTag;
+                pendingLocationTag = null;
+                tagCurrentLocation(tag);
             }
         }
     }
