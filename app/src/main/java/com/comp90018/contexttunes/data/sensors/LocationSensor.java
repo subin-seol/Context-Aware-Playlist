@@ -116,18 +116,4 @@ public class LocationSensor {
             callback.accept(null);
         }
     }
-
-//    /**
-//     * Call this from your Activity's onRequestPermissionsResult to handle permission result.
-//     * Example:
-//     *   @Override
-//     *   public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
-//     *       locationSensor.handlePermissionResult(requestCode, grantResults, (location) -> { ... });
-//     *   }
-//     */
-//    public void handlePermissionResult(int requestCode, @NonNull int[] grantResults, @NonNull Consumer<Location> callback) {
-//        if (requestCode == REQUEST_CODE_LOCATION && grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-//            getCurrentLocation(callback);
-//        }
-//    }
 }
