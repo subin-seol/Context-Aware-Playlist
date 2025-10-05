@@ -29,6 +29,7 @@ import com.comp90018.contexttunes.databinding.FragmentHomeBinding;
 import com.comp90018.contexttunes.domain.Context;
 import com.comp90018.contexttunes.domain.Recommendation;
 import com.comp90018.contexttunes.domain.RuleEngine;
+import com.comp90018.contexttunes.services.SpotifyApiService;
 import com.comp90018.contexttunes.ui.viewModel.SharedCameraViewModel;
 import com.comp90018.contexttunes.utils.PermissionManager;
 import com.comp90018.contexttunes.utils.PlaylistOpener;
@@ -58,6 +59,7 @@ public class HomeFragment extends Fragment {
     // Why are we asking for location permission right now?
     private enum Pending { NONE, WEATHER, PLACES }
     private Pending pending = Pending.NONE;
+    private SpotifyApiService spotifyApiService;
 
 
     @Nullable
@@ -76,6 +78,10 @@ public class HomeFragment extends Fragment {
         locationSensor  = new LocationSensor(requireContext());
         googlePlacesAPI = GooglePlacesAPI.getInstance(requireContext());
         mockWeatherService = new MockWeatherService(requireContext());
+        spotifyApiService = new SpotifyApiService(BuildConfig.SPOTIFY_ACCESS_TOKEN);
+
+        // Test playlist search
+        testSpotifyPlaylistSearch("party");
 
         // Header
         binding.welcomeTitle.setText("Welcome back!");
@@ -418,6 +424,32 @@ public class HomeFragment extends Fragment {
         }
     }
 
+    private void testSpotifyPlaylistSearch(String query) {
+        Log.d(TAG, "Starting playlist search for search key: " + query);
+
+        spotifyApiService.searchPlaylists(query, 5, new SpotifyApiService.PlaylistCallback() {
+            @Override
+            public void onSuccess(List<SpotifyApiService.Playlist> playlists) {
+                Log.d(TAG, "Search successful! Found " + playlists.size() + " playlists");
+
+                for (SpotifyApiService.Playlist playlist : playlists) {
+                    Log.d(TAG, "====================");
+                    Log.d(TAG, "Name: " + playlist.name);
+                    Log.d(TAG, "Owner: " + playlist.ownerName);
+                    Log.d(TAG, "Tracks: " + playlist.totalTracks);
+                    Log.d(TAG, "Description: " + playlist.description);
+                    Log.d(TAG, "Image URL: " + playlist.imageUrl);
+                    Log.d(TAG, "Spotify URL: " + playlist.externalUrl);
+                    Log.d(TAG, "====================");
+                }
+            }
+
+            @Override
+            public void onError(String error) {
+                Log.e(TAG, "Error occurred: " + error);
+            }
+        });
+    }
     // ===================== LIFECYCLE =====================
 
     @Override
