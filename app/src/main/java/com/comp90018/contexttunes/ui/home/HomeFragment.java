@@ -118,7 +118,8 @@ public class HomeFragment extends Fragment {
 
         // ---- Generate / Regenerate ----
         binding.btnGo.setOnClickListener(v -> testSpotifyPlaylistSearch("party"));
-//        binding.btnRegenerate.setOnClickListener(v -> testSpotifyPlaylistSearch("party"));
+        binding.btnRegenerate.setOnClickListener(v -> testSpotifyPlaylistSearch("party"));
+        binding.btnSnapRegen.setOnClickListener(v -> ((MainActivity) requireActivity()).goToSnapTab());
 
         // ---- Preview captured image ----
         binding.btnPreviewImage.setOnClickListener(v ->
@@ -404,13 +405,24 @@ public class HomeFragment extends Fragment {
     private void testSpotifyPlaylistSearch(String query) {
         Log.d(TAG, "Starting playlist search for search key: " + query);
 
-        // Disable GO button
+        // Disable buttons
         binding.btnGo.setEnabled(false);
+        if (playlistsGenerated) {
+            binding.btnRegenerate.setEnabled(false);
+        }
 
-        // Hide all content below welcome card
-        binding.contentContainer.setVisibility(View.GONE);
+        // HIDE EVERYTHING
+        binding.welcomeCard.setVisibility(View.GONE);
+        binding.createVibeCard.setVisibility(View.GONE);
+        binding.currentMoodCard.setVisibility(View.GONE);
+        binding.regenerateCard.setVisibility(View.GONE);
+        binding.playlistSuggestionsSection.setVisibility(View.GONE);
+        binding.statsRow.setVisibility(View.GONE);
+        binding.recentTitle.setVisibility(View.GONE);
+        binding.recentItem.setVisibility(View.GONE);
+        binding.btnFetchPlaces.setVisibility(View.GONE);
 
-        // Show centered loading UI
+        // Show loading
         binding.loadingContainer.setVisibility(View.VISIBLE);
 
         spotifyApiService.searchPlaylists(query, 5, new SpotifyApiService.PlaylistCallback() {
@@ -419,35 +431,27 @@ public class HomeFragment extends Fragment {
                 if (getActivity() == null) return;
 
                 requireActivity().runOnUiThread(() -> {
-                    Log.d(TAG, "Search successful! Found " + playlists.size() + " playlists");
-
-                    for (SpotifyApiService.Playlist playlist : playlists) {
-                        Log.d(TAG, "====================");
-                        Log.d(TAG, "Name: " + playlist.name);
-                        Log.d(TAG, "Owner: " + playlist.ownerName);
-                        Log.d(TAG, "Tracks: " + playlist.totalTracks);
-                        Log.d(TAG, "Description: " + playlist.description);
-                        Log.d(TAG, "Image URL: " + playlist.imageUrl);
-                        Log.d(TAG, "Spotify URL: " + playlist.externalUrl);
-                        Log.d(TAG, "====================");
-                    }
-
-                    // Store and display
                     spotifyPlaylists = playlists;
                     playlistsGenerated = true;
 
-                    // Hide loading, show content
                     binding.loadingContainer.setVisibility(View.GONE);
-                    binding.contentContainer.setVisibility(View.VISIBLE);
                     binding.btnGo.setEnabled(true);
-                    // Change button text to "Regenerate"
-                    binding.btnGo.setText("Regenerate");
+                    binding.btnRegenerate.setEnabled(true);
 
-                    // Populate UI
+                    // HIDE: welcome, create vibe, stats, recent activity
+                    binding.welcomeCard.setVisibility(View.GONE);
+                    binding.createVibeCard.setVisibility(View.GONE);
+                    binding.statsRow.setVisibility(View.GONE);
+                    binding.recentTitle.setVisibility(View.GONE);
+                    binding.recentItem.setVisibility(View.GONE);
+                    binding.btnFetchPlaces.setVisibility(View.GONE);
+
+                    // SHOW: current mood (centered), regenerate card, playlists
                     binding.currentMoodCard.setVisibility(View.VISIBLE);
-                    populateContextTags();
-
+                    binding.regenerateCard.setVisibility(View.VISIBLE);
                     binding.playlistSuggestionsSection.setVisibility(View.VISIBLE);
+
+                    populateContextTags();
                     populateSpotifyPlaylistCards();
 
                     if (playlists.isEmpty()) {
@@ -462,15 +466,23 @@ public class HomeFragment extends Fragment {
                 requireActivity().runOnUiThread(() -> {
                     Log.e(TAG, "Error occurred: " + error);
 
-                    // Hide loading, show content, enable button
+                    // Hide loading
                     binding.loadingContainer.setVisibility(View.GONE);
-                    binding.contentContainer.setVisibility(View.VISIBLE);
                     binding.btnGo.setEnabled(true);
+                    binding.btnRegenerate.setEnabled(true);
 
-                    // Show previous results if they existed
                     if (playlistsGenerated) {
+                        // Already had playlists - show AFTER generation state
                         binding.currentMoodCard.setVisibility(View.VISIBLE);
+                        binding.regenerateCard.setVisibility(View.VISIBLE);
                         binding.playlistSuggestionsSection.setVisibility(View.VISIBLE);
+                    } else {
+                        // First time error - show BEFORE generation state
+                        binding.welcomeCard.setVisibility(View.VISIBLE);
+                        binding.createVibeCard.setVisibility(View.VISIBLE);
+                        binding.statsRow.setVisibility(View.VISIBLE);
+                        binding.recentTitle.setVisibility(View.VISIBLE);
+                        binding.recentItem.setVisibility(View.VISIBLE);
                     }
 
                     Toast.makeText(requireContext(), "Error fetching playlists: " + error, Toast.LENGTH_SHORT).show();
