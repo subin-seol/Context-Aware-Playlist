@@ -79,27 +79,48 @@ public class SpotifyApiService {
             JSONArray items = playlistsObj.getJSONArray("items");
 
             for (int i = 0; i < items.length(); i++) {
-                JSONObject item = items.getJSONObject(i);
+                try {
+                    // Check if item is null
+                    if (items.isNull(i)) {
+                        continue;
+                    }
 
-                String id = item.getString("id");
-                String name = item.getString("name");
-                String description = item.optString("description", "");
-                String imageUrl = "";
+                    JSONObject item = items.getJSONObject(i);
 
-                JSONArray images = item.optJSONArray("images");
-                if (images != null && images.length() > 0) {
-                    imageUrl = images.getJSONObject(0).getString("url");
+                    String id = item.optString("id", "");
+                    String name = item.optString("name", "Unknown");
+                    String description = item.optString("description", "");
+                    String imageUrl = "";
+
+                    JSONArray images = item.optJSONArray("images");
+                    if (images != null && images.length() > 0) {
+                        imageUrl = images.getJSONObject(0).optString("url", "");
+                    }
+
+                    String ownerName = "Unknown";
+                    if (!item.isNull("owner")) {
+                        JSONObject owner = item.getJSONObject("owner");
+                        ownerName = owner.optString("display_name", "Unknown");
+                    }
+
+                    int totalTracks = 0;
+                    if (!item.isNull("tracks")) {
+                        JSONObject tracks = item.getJSONObject("tracks");
+                        totalTracks = tracks.optInt("total", 0);
+                    }
+
+                    String externalUrl = "";
+                    if (!item.isNull("external_urls")) {
+                        JSONObject urls = item.getJSONObject("external_urls");
+                        externalUrl = urls.optString("spotify", "");
+                    }
+
+                    playlists.add(new Playlist(id, name, description, imageUrl,
+                            ownerName, totalTracks, externalUrl));
+                } catch (Exception e) {
+                    // Skip this playlist if there's an error parsing it
+                    continue;
                 }
-
-                JSONObject owner = item.getJSONObject("owner");
-                String ownerName = owner.getString("display_name");
-
-                int totalTracks = item.getJSONObject("tracks").getInt("total");
-                String externalUrl = item.getJSONObject("external_urls")
-                        .getString("spotify");
-
-                playlists.add(new Playlist(id, name, description, imageUrl,
-                        ownerName, totalTracks, externalUrl));
             }
         } else {
             throw new Exception("HTTP Error: " + responseCode);

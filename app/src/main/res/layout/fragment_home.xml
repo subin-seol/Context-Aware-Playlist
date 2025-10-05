@@ -90,7 +90,7 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- BEFORE GENERATION: Create My Vibe Card -->
+        <!-- Create My Vibe Card (Always Visible) -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/createVibeCard"
             android:layout_width="match_parent"
@@ -160,7 +160,33 @@
                     app:cornerRadius="14dp"
                     app:backgroundTint="@color/teal_accent"
                     android:textColor="@android:color/black" />
+
+            <!-- Loading indicator (hidden by default) -->
+            <LinearLayout
+                android:id="@+id/loadingIndicator"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center"
+                android:layout_marginTop="@dimen/space_12"
+                android:visibility="gone">
+
+                <ProgressBar
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:indeterminateTint="@color/teal_accent" />
+
+                <TextView
+                    android:id="@+id/loadingText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="@dimen/space_8"
+                    android:text="Generating playlists..."
+                    android:textColor="@color/text_secondary"
+                    android:textSize="14sp" />
             </LinearLayout>
+
+        </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
         <!-- AFTER GENERATION: Current Mood Section -->
@@ -225,19 +251,7 @@
         </LinearLayout>
 
         <!-- AFTER GENERATION: Regenerate Button -->
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnRegenerate"
-            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-            android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:text="Regenerate Playlist"
-            android:textColor="@color/teal_accent"
-            android:textAllCaps="false"
-            app:cornerRadius="12dp"
-            app:strokeColor="@color/teal_accent"
-            app:strokeWidth="1dp"
-            android:layout_marginTop="@dimen/space_16"
-            android:visibility="gone" />
+
 
 
         <!-- Stats row -->

@@ -52,6 +52,9 @@ public class HomeFragment extends Fragment {
     private WeatherState currentWeather = WeatherState.UNKNOWN;
     private LightBucket currentLightBucket = LightBucket.UNKNOWN;
 
+    private List<SpotifyApiService.Playlist> spotifyPlaylists = new ArrayList<>();
+    private boolean playlistsGenerated = false;
+
     private Recommendation currentRecommendation = null;
     private List<Recommendation> currentRecommendations = new ArrayList<>();
     private boolean recommendationsGenerated = false;
@@ -80,8 +83,6 @@ public class HomeFragment extends Fragment {
         mockWeatherService = new MockWeatherService(requireContext());
         spotifyApiService = new SpotifyApiService(BuildConfig.SPOTIFY_ACCESS_TOKEN);
 
-        // Test playlist search
-        testSpotifyPlaylistSearch("party");
 
         // Header
         binding.welcomeTitle.setText("Welcome back!");
@@ -112,8 +113,8 @@ public class HomeFragment extends Fragment {
         );
 
         // ---- Generate / Regenerate ----
-        binding.btnGo.setOnClickListener(v -> generateRecommendations());
-        binding.btnRegenerate.setOnClickListener(v -> generateRecommendations());
+        binding.btnGo.setOnClickListener(v -> testSpotifyPlaylistSearch("party"));
+        binding.btnRegenerate.setOnClickListener(v -> testSpotifyPlaylistSearch("party"));
 
         // ---- Preview captured image ----
         binding.btnPreviewImage.setOnClickListener(v ->
@@ -424,29 +425,73 @@ public class HomeFragment extends Fragment {
         }
     }
 
+    // ===================== SPOTIFY PLAYLIST GENERATION =====================
     private void testSpotifyPlaylistSearch(String query) {
+        // Show loading state
+        binding.btnGo.setEnabled(false);
+        binding.loadingIndicator.setVisibility(View.VISIBLE);
+
+        // Hide previous results while loading
+        binding.currentMoodCard.setVisibility(View.GONE);
+        binding.playlistSuggestionsSection.setVisibility(View.GONE);
+
         Log.d(TAG, "Starting playlist search for search key: " + query);
 
         spotifyApiService.searchPlaylists(query, 5, new SpotifyApiService.PlaylistCallback() {
             @Override
             public void onSuccess(List<SpotifyApiService.Playlist> playlists) {
-                Log.d(TAG, "Search successful! Found " + playlists.size() + " playlists");
+                if (getActivity() == null) return;
 
-                for (SpotifyApiService.Playlist playlist : playlists) {
-                    Log.d(TAG, "====================");
-                    Log.d(TAG, "Name: " + playlist.name);
-                    Log.d(TAG, "Owner: " + playlist.ownerName);
-                    Log.d(TAG, "Tracks: " + playlist.totalTracks);
-                    Log.d(TAG, "Description: " + playlist.description);
-                    Log.d(TAG, "Image URL: " + playlist.imageUrl);
-                    Log.d(TAG, "Spotify URL: " + playlist.externalUrl);
-                    Log.d(TAG, "====================");
-                }
+
+                requireActivity().runOnUiThread(() -> {
+                    Log.d(TAG, "Search successful! Found " + playlists.size() + " playlists");
+
+                    for (SpotifyApiService.Playlist playlist : playlists) {
+                        Log.d(TAG, "====================");
+                        Log.d(TAG, "Name: " + playlist.name);
+                        Log.d(TAG, "Owner: " + playlist.ownerName);
+                        Log.d(TAG, "Tracks: " + playlist.totalTracks);
+                        Log.d(TAG, "Description: " + playlist.description);
+                        Log.d(TAG, "Image URL: " + playlist.imageUrl);
+                        Log.d(TAG, "Spotify URL: " + playlist.externalUrl);
+                        Log.d(TAG, "====================");
+                    }
+
+                    // Store playlists and show them
+                    spotifyPlaylists = playlists;
+                    playlistsGenerated = true;
+
+                    // Hide loading, reset button
+                    binding.loadingIndicator.setVisibility(View.GONE);
+                    binding.btnGo.setEnabled(true);
+
+                    // Show the results on screen
+                    showGeneratedState();
+
+                    if (playlists.isEmpty()) {
+                        Toast.makeText(requireContext(), "No playlists found. Try again!", Toast.LENGTH_SHORT).show();
+                    }
+                });
             }
 
-            @Override
             public void onError(String error) {
-                Log.e(TAG, "Error occurred: " + error);
+                if (getActivity() == null) return;
+
+                requireActivity().runOnUiThread(() -> {
+                    Log.e(TAG, "Error occurred: " + error);
+
+                    // Hide loading, reset button
+                    binding.loadingIndicator.setVisibility(View.GONE);
+                    binding.btnGo.setEnabled(true);
+
+                    // Show previous results if they existed
+                    if (playlistsGenerated) {
+                        binding.currentMoodCard.setVisibility(View.VISIBLE);
+                        binding.playlistSuggestionsSection.setVisibility(View.VISIBLE);
+                    }
+
+                    Toast.makeText(requireContext(), "Error fetching playlists: " + error, Toast.LENGTH_SHORT).show();
+                });
             }
         });
     }
