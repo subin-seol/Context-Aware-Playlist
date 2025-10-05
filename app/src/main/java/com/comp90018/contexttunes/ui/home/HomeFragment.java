@@ -1,12 +1,15 @@
 package com.comp90018.contexttunes.ui.home;
 
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.location.Location;
+import android.net.Uri;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -16,8 +19,10 @@ import androidx.core.content.ContextCompat;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.ViewModelProvider;
 
+import com.bumptech.glide.Glide;
 import com.comp90018.contexttunes.BuildConfig;
 import com.comp90018.contexttunes.MainActivity;
+import com.comp90018.contexttunes.R;
 import com.comp90018.contexttunes.data.api.GooglePlacesAPI;
 import com.comp90018.contexttunes.data.sensors.LightSensor;
 import com.comp90018.contexttunes.data.sensors.LightSensor.LightBucket;
@@ -32,7 +37,6 @@ import com.comp90018.contexttunes.domain.RuleEngine;
 import com.comp90018.contexttunes.services.SpotifyApiService;
 import com.comp90018.contexttunes.ui.viewModel.SharedCameraViewModel;
 import com.comp90018.contexttunes.utils.PermissionManager;
-import com.comp90018.contexttunes.utils.PlaylistOpener;
 import com.comp90018.contexttunes.utils.SettingsManager;
 import com.google.android.libraries.places.api.model.Place;
 
@@ -114,7 +118,7 @@ public class HomeFragment extends Fragment {
 
         // ---- Generate / Regenerate ----
         binding.btnGo.setOnClickListener(v -> testSpotifyPlaylistSearch("party"));
-        binding.btnRegenerate.setOnClickListener(v -> testSpotifyPlaylistSearch("party"));
+//        binding.btnRegenerate.setOnClickListener(v -> testSpotifyPlaylistSearch("party"));
 
         // ---- Preview captured image ----
         binding.btnPreviewImage.setOnClickListener(v ->
@@ -267,10 +271,8 @@ public class HomeFragment extends Fragment {
 
         // Show playlist suggestions section
         binding.playlistSuggestionsSection.setVisibility(View.VISIBLE);
-        populatePlaylistCards();
-
-        // Show regenerate button
-        binding.btnRegenerate.setVisibility(View.VISIBLE);
+        populateSpotifyPlaylistCards();
+        
     }
 
     private void showBeforeGenerationState() {
@@ -283,7 +285,6 @@ public class HomeFragment extends Fragment {
         // Hide "after generation" elements
         binding.currentMoodCard.setVisibility(View.GONE);
         binding.playlistSuggestionsSection.setVisibility(View.GONE);
-        binding.btnRegenerate.setVisibility(View.GONE);
 
         recommendationsGenerated = false;
     }
@@ -333,32 +334,6 @@ public class HomeFragment extends Fragment {
         chip.setClickable(false);
         chip.setChipCornerRadius(24f);
         binding.contextTagsGroup.addView(chip);
-    }
-
-    // Populate playlist cards based on current recommendations
-    private void populatePlaylistCards() {
-        binding.playlistCardsContainer.removeAllViews();
-
-        for (Recommendation rec : currentRecommendations) {
-            View card = getLayoutInflater().inflate(
-                    com.comp90018.contexttunes.R.layout.item_playlist_card,
-                    binding.playlistCardsContainer,
-                    false
-            );
-
-            // Potentially use View Binding here in the future to stay consistent
-            TextView playlistName   = card.findViewById(com.comp90018.contexttunes.R.id.playlistName);
-            TextView playlistReason = card.findViewById(com.comp90018.contexttunes.R.id.playlistReason);
-            com.google.android.material.button.MaterialButton btnPlay =
-                    card.findViewById(com.comp90018.contexttunes.R.id.btnPlay);
-
-            playlistName.setText(rec.playlist.name);
-            playlistReason.setText(rec.reason);
-
-            btnPlay.setOnClickListener(v -> PlaylistOpener.openPlaylist(requireContext(), rec.playlist));
-
-            binding.playlistCardsContainer.addView(card);
-        }
     }
 
     // ===================== PLACES =====================
@@ -427,21 +402,21 @@ public class HomeFragment extends Fragment {
 
     // ===================== SPOTIFY PLAYLIST GENERATION =====================
     private void testSpotifyPlaylistSearch(String query) {
-        // Show loading state
-        binding.btnGo.setEnabled(false);
-        binding.loadingIndicator.setVisibility(View.VISIBLE);
-
-        // Hide previous results while loading
-        binding.currentMoodCard.setVisibility(View.GONE);
-        binding.playlistSuggestionsSection.setVisibility(View.GONE);
-
         Log.d(TAG, "Starting playlist search for search key: " + query);
+
+        // Disable GO button
+        binding.btnGo.setEnabled(false);
+
+        // Hide all content below welcome card
+        binding.contentContainer.setVisibility(View.GONE);
+
+        // Show centered loading UI
+        binding.loadingContainer.setVisibility(View.VISIBLE);
 
         spotifyApiService.searchPlaylists(query, 5, new SpotifyApiService.PlaylistCallback() {
             @Override
             public void onSuccess(List<SpotifyApiService.Playlist> playlists) {
                 if (getActivity() == null) return;
-
 
                 requireActivity().runOnUiThread(() -> {
                     Log.d(TAG, "Search successful! Found " + playlists.size() + " playlists");
@@ -457,16 +432,23 @@ public class HomeFragment extends Fragment {
                         Log.d(TAG, "====================");
                     }
 
-                    // Store playlists and show them
+                    // Store and display
                     spotifyPlaylists = playlists;
                     playlistsGenerated = true;
 
-                    // Hide loading, reset button
-                    binding.loadingIndicator.setVisibility(View.GONE);
+                    // Hide loading, show content
+                    binding.loadingContainer.setVisibility(View.GONE);
+                    binding.contentContainer.setVisibility(View.VISIBLE);
                     binding.btnGo.setEnabled(true);
+                    // Change button text to "Regenerate"
+                    binding.btnGo.setText("Regenerate");
 
-                    // Show the results on screen
-                    showGeneratedState();
+                    // Populate UI
+                    binding.currentMoodCard.setVisibility(View.VISIBLE);
+                    populateContextTags();
+
+                    binding.playlistSuggestionsSection.setVisibility(View.VISIBLE);
+                    populateSpotifyPlaylistCards();
 
                     if (playlists.isEmpty()) {
                         Toast.makeText(requireContext(), "No playlists found. Try again!", Toast.LENGTH_SHORT).show();
@@ -480,8 +462,9 @@ public class HomeFragment extends Fragment {
                 requireActivity().runOnUiThread(() -> {
                     Log.e(TAG, "Error occurred: " + error);
 
-                    // Hide loading, reset button
-                    binding.loadingIndicator.setVisibility(View.GONE);
+                    // Hide loading, show content, enable button
+                    binding.loadingContainer.setVisibility(View.GONE);
+                    binding.contentContainer.setVisibility(View.VISIBLE);
                     binding.btnGo.setEnabled(true);
 
                     // Show previous results if they existed
@@ -495,6 +478,55 @@ public class HomeFragment extends Fragment {
             }
         });
     }
+
+    // Populate playlist cards based on current recommendations
+    private void populateSpotifyPlaylistCards() {
+        Log.d(TAG, "Populating " + spotifyPlaylists.size() + " playlist cards");
+        binding.playlistCardsContainer.removeAllViews();
+
+        for (SpotifyApiService.Playlist playlist : spotifyPlaylists) {
+            View card = getLayoutInflater().inflate(
+                    R.layout.item_playlist_card,
+                    binding.playlistCardsContainer,
+                    false
+            );
+
+            ImageView playlistImage = card.findViewById(R.id.playlistImage);
+            TextView playlistName = card.findViewById(R.id.playlistName);
+            TextView playlistReason = card.findViewById(R.id.playlistReason);
+            com.google.android.material.button.MaterialButton btnPlay = card.findViewById(R.id.btnPlay);
+
+            if (playlist.imageUrl != null && !playlist.imageUrl.isEmpty()) {
+                Glide.with(requireContext())
+                        .load(playlist.imageUrl)
+                        .into(playlistImage);
+            }
+
+            playlistName.setText(playlist.name);
+            playlistReason.setText(playlist.ownerName + " • " + playlist.totalTracks + " tracks");
+
+            btnPlay.setOnClickListener(v -> {
+                Log.d(TAG, "Opening playlist: " + playlist.externalUrl);
+                openSpotifyPlaylist(playlist.externalUrl);
+            });
+
+            binding.playlistCardsContainer.addView(card);
+        }
+    }
+
+    private void openSpotifyPlaylist(String url) {
+        if (url == null || url.isEmpty()) {
+            Toast.makeText(requireContext(), "Playlist URL not available", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        try {
+            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+            startActivity(intent);
+        } catch (Exception e) {
+            Toast.makeText(requireContext(), "Cannot open link", Toast.LENGTH_SHORT).show();
+        }
+    }
+
     // ===================== LIFECYCLE =====================
 
     @Override

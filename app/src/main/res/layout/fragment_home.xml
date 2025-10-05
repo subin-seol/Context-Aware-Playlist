@@ -32,7 +32,6 @@
                 android:gravity="center_vertical"
                 android:padding="@dimen/space_16">
 
-                <!-- Left: vertical stack -->
                 <LinearLayout
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
@@ -79,7 +78,6 @@
 
                 </LinearLayout>
 
-                <!-- Right: music note icon -->
                 <ImageView
                     android:id="@+id/welcomeIcon"
                     android:layout_width="40dp"
@@ -90,7 +88,7 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- Create My Vibe Card (Always Visible) -->
+        <!-- Create My Vibe Card -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/createVibeCard"
             android:layout_width="match_parent"
@@ -161,248 +159,260 @@
                     app:backgroundTint="@color/teal_accent"
                     android:textColor="@android:color/black" />
 
-            <!-- Loading indicator (hidden by default) -->
-            <LinearLayout
-                android:id="@+id/loadingIndicator"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center"
-                android:layout_marginTop="@dimen/space_12"
-                android:visibility="gone">
-
-                <ProgressBar
-                    android:layout_width="20dp"
-                    android:layout_height="20dp"
-                    android:indeterminateTint="@color/teal_accent" />
-
-                <TextView
-                    android:id="@+id/loadingText"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="@dimen/space_8"
-                    android:text="Generating playlists..."
-                    android:textColor="@color/text_secondary"
-                    android:textSize="14sp" />
             </LinearLayout>
-
-        </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- AFTER GENERATION: Current Mood Section -->
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/currentMoodCard"
+        <!-- Content Container - Everything below Create My Vibe -->
+        <LinearLayout
+            android:id="@+id/contentContainer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_16"
-            android:visibility="gone"
-            app:cardBackgroundColor="@color/card_dark"
-            app:cardCornerRadius="@dimen/radius_20"
-            app:cardElevation="@dimen/elev_2"
-            app:strokeColor="@android:color/transparent"
-            app:strokeWidth="0dp">
+            android:orientation="vertical">
 
+            <!-- Current Mood Section -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/currentMoodCard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_16"
+                android:visibility="gone"
+                app:cardBackgroundColor="@color/card_dark"
+                app:cardCornerRadius="@dimen/radius_20"
+                app:cardElevation="@dimen/elev_2"
+                app:strokeColor="@android:color/transparent"
+                app:strokeWidth="0dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="@dimen/space_16">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Current Mood"
+                        android:textColor="@color/text_primary"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        android:layout_marginBottom="@dimen/space_12" />
+
+                    <com.google.android.material.chip.ChipGroup
+                        android:id="@+id/contextTagsGroup"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        app:chipSpacing="@dimen/space_8" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Playlist Suggestions Section -->
             <LinearLayout
+                android:id="@+id/playlistSuggestionsSection"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:padding="@dimen/space_16">
+                android:layout_marginTop="@dimen/space_16"
+                android:visibility="gone">
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Current Mood"
+                    android:text="Playlist Suggestions"
                     android:textColor="@color/text_primary"
-                    android:textSize="16sp"
+                    android:textSize="18sp"
                     android:textStyle="bold"
                     android:layout_marginBottom="@dimen/space_12" />
 
-                <com.google.android.material.chip.ChipGroup
-                    android:id="@+id/contextTagsGroup"
+                <LinearLayout
+                    android:id="@+id/playlistCardsContainer"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    app:chipSpacing="@dimen/space_8" />
+                    android:orientation="vertical" />
             </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
 
-        <!-- AFTER GENERATION: Playlist Suggestions Section -->
+            <!-- Stats row -->
+            <LinearLayout
+                android:id="@+id/statsRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_16"
+                android:orientation="horizontal">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="100dp"
+                    android:layout_weight="1"
+                    android:background="@color/card_darker"
+                    android:padding="@dimen/space_16"
+                    android:gravity="center_vertical"
+                    android:orientation="vertical"
+                    android:layout_marginEnd="@dimen/space_8"
+                    android:elevation="2dp"
+                    android:clipToOutline="true">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="12"
+                        android:textColor="@color/teal_accent"
+                        android:textSize="22sp"
+                        android:textStyle="bold"/>
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Playlists Found"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="12sp"/>
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="100dp"
+                    android:layout_weight="1"
+                    android:background="@color/card_darker"
+                    android:padding="@dimen/space_16"
+                    android:gravity="center_vertical"
+                    android:orientation="vertical"
+                    android:layout_marginEnd="@dimen/space_8"
+                    android:elevation="2dp"
+                    android:clipToOutline="true">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="2.5h"
+                        android:textColor="@color/blue_accent"
+                        android:textSize="22sp"
+                        android:textStyle="bold"/>
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Listening Time"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="12sp"/>
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="100dp"
+                    android:layout_weight="1"
+                    android:background="@color/card_darker"
+                    android:padding="@dimen/space_16"
+                    android:gravity="center_vertical"
+                    android:orientation="vertical"
+                    android:elevation="2dp"
+                    android:clipToOutline="true">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="85%"
+                        android:textColor="@color/text_primary"
+                        android:textSize="22sp"
+                        android:textStyle="bold"/>
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Match Rate"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="12sp"/>
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Recent Activity -->
+            <TextView
+                android:id="@+id/recentTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_24"
+                android:text="Recent Activity"
+                android:textColor="@color/text_primary"
+                android:textStyle="bold"
+                android:textSize="18sp" />
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/recentItem"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_12"
+                app:cardBackgroundColor="@color/card_dark"
+                app:cardCornerRadius="@dimen/radius_16"
+                app:cardElevation="@dimen/elev_2"
+                app:strokeColor="@android:color/transparent"
+                app:strokeWidth="0dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:padding="@dimen/space_16"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:id="@+id/recentName"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Morning Walk Vibes"
+                        android:textColor="@color/text_primary"
+                        android:textSize="15sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/recentTag"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:paddingLeft="@dimen/space_12"
+                        android:paddingRight="@dimen/space_12"
+                        android:paddingTop="@dimen/space_4"
+                        android:paddingBottom="@dimen/space_4"
+                        android:background="@color/chip_bg"
+                        android:text="Walking"
+                        android:textColor="@color/text_primary"
+                        android:textSize="12sp"
+                        android:includeFontPadding="false"/>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <Button
+                android:id="@+id/btn_fetch_places"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Fetch Nearby Places" />
+
+        </LinearLayout>
+
+        <!-- Loading Container - Shows when generating -->
         <LinearLayout
-            android:id="@+id/playlistSuggestionsSection"
+            android:id="@+id/loadingContainer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="32dp"
             android:orientation="vertical"
-            android:layout_marginTop="@dimen/space_16"
+            android:gravity="center"
+            android:padding="32dp"
             android:visibility="gone">
+
+            <ProgressBar
+                android:layout_width="60dp"
+                android:layout_height="60dp"
+                android:indeterminateTint="@color/teal_accent" />
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Playlist Suggestions"
+                android:layout_marginTop="@dimen/space_16"
+                android:text="Generating your playlists..."
                 android:textColor="@color/text_primary"
-                android:textSize="18sp"
-                android:textStyle="bold"
-                android:layout_marginBottom="@dimen/space_12" />
+                android:textSize="16sp"
+                android:textAlignment="center" />
 
-            <LinearLayout
-                android:id="@+id/playlistCardsContainer"
-                android:layout_width="match_parent"
+            <TextView
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:orientation="vertical" />
+                android:layout_marginTop="@dimen/space_8"
+                android:text="This may take a few moments"
+                android:textColor="@color/text_secondary"
+                android:textSize="14sp"
+                android:textAlignment="center" />
         </LinearLayout>
-
-        <!-- AFTER GENERATION: Regenerate Button -->
-
-
-
-        <!-- Stats row -->
-        <LinearLayout
-            android:id="@+id/statsRow"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_16"
-            android:orientation="horizontal">
-
-            <!-- Stat 1 -->
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="100dp"
-                android:layout_weight="1"
-                android:background="@color/card_darker"
-                android:padding="@dimen/space_16"
-                android:gravity="center_vertical"
-                android:orientation="vertical"
-                android:layout_marginEnd="@dimen/space_8"
-                android:elevation="2dp"
-                android:clipToOutline="true">
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="12"
-                    android:textColor="@color/teal_accent"
-                    android:textSize="22sp"
-                    android:textStyle="bold"/>
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Playlists Found"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp"/>
-            </LinearLayout>
-
-            <!-- Stat 2 -->
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="100dp"
-                android:layout_weight="1"
-                android:background="@color/card_darker"
-                android:padding="@dimen/space_16"
-                android:gravity="center_vertical"
-                android:orientation="vertical"
-                android:layout_marginEnd="@dimen/space_8"
-                android:elevation="2dp"
-                android:clipToOutline="true">
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="2.5h"
-                    android:textColor="@color/blue_accent"
-                    android:textSize="22sp"
-                    android:textStyle="bold"/>
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Listening Time"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp"/>
-            </LinearLayout>
-
-            <!-- Stat 3 -->
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="100dp"
-                android:layout_weight="1"
-                android:background="@color/card_darker"
-                android:padding="@dimen/space_16"
-                android:gravity="center_vertical"
-                android:orientation="vertical"
-                android:elevation="2dp"
-                android:clipToOutline="true">
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="85%"
-                    android:textColor="@color/text_primary"
-                    android:textSize="22sp"
-                    android:textStyle="bold"/>
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Match Rate"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp"/>
-            </LinearLayout>
-        </LinearLayout>
-
-        <!-- Recent Activity -->
-        <TextView
-            android:id="@+id/recentTitle"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_24"
-            android:text="Recent Activity"
-            android:textColor="@color/text_primary"
-            android:textStyle="bold"
-            android:textSize="18sp" />
-
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/recentItem"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_12"
-            app:cardBackgroundColor="@color/card_dark"
-            app:cardCornerRadius="@dimen/radius_16"
-            app:cardElevation="@dimen/elev_2"
-            app:strokeColor="@android:color/transparent"
-            app:strokeWidth="0dp">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:padding="@dimen/space_16"
-                android:gravity="center_vertical">
-
-                <TextView
-                    android:id="@+id/recentName"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="Morning Walk Vibes"
-                    android:textColor="@color/text_primary"
-                    android:textSize="15sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:id="@+id/recentTag"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:paddingLeft="@dimen/space_12"
-                    android:paddingRight="@dimen/space_12"
-                    android:paddingTop="@dimen/space_4"
-                    android:paddingBottom="@dimen/space_4"
-                    android:background="@color/chip_bg"
-                    android:text="Walking"
-                    android:textColor="@color/text_primary"
-                    android:textSize="12sp"
-                    android:includeFontPadding="false"/>
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-
-        <Button
-            android:id="@+id/btn_fetch_places"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Fetch Nearby Places" />
 
     </LinearLayout>
 </androidx.core.widget.NestedScrollView>
