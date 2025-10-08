@@ -1,12 +1,15 @@
 package com.comp90018.contexttunes.ui.home;
 
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.location.Location;
+import android.net.Uri;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -16,8 +19,10 @@ import androidx.core.content.ContextCompat;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.ViewModelProvider;
 
+import com.bumptech.glide.Glide;
 import com.comp90018.contexttunes.BuildConfig;
 import com.comp90018.contexttunes.MainActivity;
+import com.comp90018.contexttunes.R;
 import com.comp90018.contexttunes.data.api.GooglePlacesAPI;
 import com.comp90018.contexttunes.data.sensors.LightSensor;
 import com.comp90018.contexttunes.data.sensors.LightSensor.LightBucket;
@@ -29,9 +34,9 @@ import com.comp90018.contexttunes.databinding.FragmentHomeBinding;
 import com.comp90018.contexttunes.domain.Context;
 import com.comp90018.contexttunes.domain.Recommendation;
 import com.comp90018.contexttunes.domain.RuleEngine;
+import com.comp90018.contexttunes.services.SpotifyApiService;
 import com.comp90018.contexttunes.ui.viewModel.SharedCameraViewModel;
 import com.comp90018.contexttunes.utils.PermissionManager;
-import com.comp90018.contexttunes.utils.PlaylistOpener;
 import com.comp90018.contexttunes.utils.SettingsManager;
 import com.google.android.libraries.places.api.model.Place;
 
@@ -51,6 +56,9 @@ public class HomeFragment extends Fragment {
     private WeatherState currentWeather = WeatherState.UNKNOWN;
     private LightBucket currentLightBucket = LightBucket.UNKNOWN;
 
+    private List<SpotifyApiService.Playlist> spotifyPlaylists = new ArrayList<>();
+    private boolean playlistsGenerated = false;
+
     private Recommendation currentRecommendation = null;
     private List<Recommendation> currentRecommendations = new ArrayList<>();
     private boolean recommendationsGenerated = false;
@@ -58,6 +66,7 @@ public class HomeFragment extends Fragment {
     // Why are we asking for location permission right now?
     private enum Pending { NONE, WEATHER, PLACES }
     private Pending pending = Pending.NONE;
+    private SpotifyApiService spotifyApiService;
 
 
     @Nullable
@@ -76,6 +85,8 @@ public class HomeFragment extends Fragment {
         locationSensor  = new LocationSensor(requireContext());
         googlePlacesAPI = GooglePlacesAPI.getInstance(requireContext());
         mockWeatherService = new MockWeatherService(requireContext());
+        spotifyApiService = new SpotifyApiService(BuildConfig.SPOTIFY_ACCESS_TOKEN);
+
 
         // Header
         binding.welcomeTitle.setText("Welcome back!");
@@ -106,8 +117,9 @@ public class HomeFragment extends Fragment {
         );
 
         // ---- Generate / Regenerate ----
-        binding.btnGo.setOnClickListener(v -> generateRecommendations());
-        binding.btnRegenerate.setOnClickListener(v -> generateRecommendations());
+        binding.btnGo.setOnClickListener(v -> testSpotifyPlaylistSearch("party"));
+        binding.btnRegenerate.setOnClickListener(v -> testSpotifyPlaylistSearch("party"));
+        binding.btnSnapRegen.setOnClickListener(v -> ((MainActivity) requireActivity()).goToSnapTab());
 
         // ---- Preview captured image ----
         binding.btnPreviewImage.setOnClickListener(v ->
@@ -260,10 +272,8 @@ public class HomeFragment extends Fragment {
 
         // Show playlist suggestions section
         binding.playlistSuggestionsSection.setVisibility(View.VISIBLE);
-        populatePlaylistCards();
-
-        // Show regenerate button
-        binding.btnRegenerate.setVisibility(View.VISIBLE);
+        populateSpotifyPlaylistCards();
+        
     }
 
     private void showBeforeGenerationState() {
@@ -276,7 +286,6 @@ public class HomeFragment extends Fragment {
         // Hide "after generation" elements
         binding.currentMoodCard.setVisibility(View.GONE);
         binding.playlistSuggestionsSection.setVisibility(View.GONE);
-        binding.btnRegenerate.setVisibility(View.GONE);
 
         recommendationsGenerated = false;
     }
@@ -326,32 +335,6 @@ public class HomeFragment extends Fragment {
         chip.setClickable(false);
         chip.setChipCornerRadius(24f);
         binding.contextTagsGroup.addView(chip);
-    }
-
-    // Populate playlist cards based on current recommendations
-    private void populatePlaylistCards() {
-        binding.playlistCardsContainer.removeAllViews();
-
-        for (Recommendation rec : currentRecommendations) {
-            View card = getLayoutInflater().inflate(
-                    com.comp90018.contexttunes.R.layout.item_playlist_card,
-                    binding.playlistCardsContainer,
-                    false
-            );
-
-            // Potentially use View Binding here in the future to stay consistent
-            TextView playlistName   = card.findViewById(com.comp90018.contexttunes.R.id.playlistName);
-            TextView playlistReason = card.findViewById(com.comp90018.contexttunes.R.id.playlistReason);
-            com.google.android.material.button.MaterialButton btnPlay =
-                    card.findViewById(com.comp90018.contexttunes.R.id.btnPlay);
-
-            playlistName.setText(rec.playlist.name);
-            playlistReason.setText(rec.reason);
-
-            btnPlay.setOnClickListener(v -> PlaylistOpener.openPlaylist(requireContext(), rec.playlist));
-
-            binding.playlistCardsContainer.addView(card);
-        }
     }
 
     // ===================== PLACES =====================
@@ -415,6 +398,144 @@ public class HomeFragment extends Fragment {
                 });
             }
             pending = Pending.NONE;
+        }
+    }
+
+    // ===================== SPOTIFY PLAYLIST GENERATION =====================
+    private void testSpotifyPlaylistSearch(String query) {
+        Log.d(TAG, "Starting playlist search for search key: " + query);
+
+        // Disable buttons
+        binding.btnGo.setEnabled(false);
+        if (playlistsGenerated) {
+            binding.btnRegenerate.setEnabled(false);
+        }
+
+        // HIDE EVERYTHING
+        binding.welcomeCard.setVisibility(View.GONE);
+        binding.createVibeCard.setVisibility(View.GONE);
+        binding.currentMoodCard.setVisibility(View.GONE);
+        binding.regenerateCard.setVisibility(View.GONE);
+        binding.playlistSuggestionsSection.setVisibility(View.GONE);
+        binding.statsRow.setVisibility(View.GONE);
+        binding.recentTitle.setVisibility(View.GONE);
+        binding.recentItem.setVisibility(View.GONE);
+        binding.btnFetchPlaces.setVisibility(View.GONE);
+
+        // Show loading
+        binding.loadingContainer.setVisibility(View.VISIBLE);
+
+        spotifyApiService.searchPlaylists(query, 5, new SpotifyApiService.PlaylistCallback() {
+            @Override
+            public void onSuccess(List<SpotifyApiService.Playlist> playlists) {
+                if (getActivity() == null) return;
+
+                requireActivity().runOnUiThread(() -> {
+                    spotifyPlaylists = playlists;
+                    playlistsGenerated = true;
+
+                    binding.loadingContainer.setVisibility(View.GONE);
+                    binding.btnGo.setEnabled(true);
+                    binding.btnRegenerate.setEnabled(true);
+
+                    // HIDE: welcome, create vibe, stats, recent activity
+                    binding.welcomeCard.setVisibility(View.GONE);
+                    binding.createVibeCard.setVisibility(View.GONE);
+                    binding.statsRow.setVisibility(View.GONE);
+                    binding.recentTitle.setVisibility(View.GONE);
+                    binding.recentItem.setVisibility(View.GONE);
+                    binding.btnFetchPlaces.setVisibility(View.GONE);
+
+                    // SHOW: current mood (centered), regenerate card, playlists
+                    binding.currentMoodCard.setVisibility(View.VISIBLE);
+                    binding.regenerateCard.setVisibility(View.VISIBLE);
+                    binding.playlistSuggestionsSection.setVisibility(View.VISIBLE);
+
+                    populateContextTags();
+                    populateSpotifyPlaylistCards();
+
+                    if (playlists.isEmpty()) {
+                        Toast.makeText(requireContext(), "No playlists found. Try again!", Toast.LENGTH_SHORT).show();
+                    }
+                });
+            }
+
+            public void onError(String error) {
+                if (getActivity() == null) return;
+
+                requireActivity().runOnUiThread(() -> {
+                    Log.e(TAG, "Error occurred: " + error);
+
+                    // Hide loading
+                    binding.loadingContainer.setVisibility(View.GONE);
+                    binding.btnGo.setEnabled(true);
+                    binding.btnRegenerate.setEnabled(true);
+
+                    if (playlistsGenerated) {
+                        // Already had playlists - show AFTER generation state
+                        binding.currentMoodCard.setVisibility(View.VISIBLE);
+                        binding.regenerateCard.setVisibility(View.VISIBLE);
+                        binding.playlistSuggestionsSection.setVisibility(View.VISIBLE);
+                    } else {
+                        // First time error - show BEFORE generation state
+                        binding.welcomeCard.setVisibility(View.VISIBLE);
+                        binding.createVibeCard.setVisibility(View.VISIBLE);
+                        binding.statsRow.setVisibility(View.VISIBLE);
+                        binding.recentTitle.setVisibility(View.VISIBLE);
+                        binding.recentItem.setVisibility(View.VISIBLE);
+                    }
+
+                    Toast.makeText(requireContext(), "Error fetching playlists: " + error, Toast.LENGTH_SHORT).show();
+                });
+            }
+        });
+    }
+
+    // Populate playlist cards based on current recommendations
+    private void populateSpotifyPlaylistCards() {
+        Log.d(TAG, "Populating " + spotifyPlaylists.size() + " playlist cards");
+        binding.playlistCardsContainer.removeAllViews();
+
+        for (SpotifyApiService.Playlist playlist : spotifyPlaylists) {
+            View card = getLayoutInflater().inflate(
+                    R.layout.item_playlist_card,
+                    binding.playlistCardsContainer,
+                    false
+            );
+
+            ImageView playlistImage = card.findViewById(R.id.playlistImage);
+            TextView playlistName = card.findViewById(R.id.playlistName);
+            TextView playlistReason = card.findViewById(R.id.playlistReason);
+            com.google.android.material.button.MaterialButton btnPlay = card.findViewById(R.id.btnPlay);
+
+            if (playlist.imageUrl != null && !playlist.imageUrl.isEmpty()) {
+                Glide.with(requireContext())
+                        .load(playlist.imageUrl)
+                        .into(playlistImage);
+            }
+
+            playlistName.setText(playlist.name);
+            playlistReason.setText(playlist.ownerName + " • " + playlist.totalTracks + " tracks");
+
+            btnPlay.setOnClickListener(v -> {
+                Log.d(TAG, "Opening playlist: " + playlist.externalUrl);
+                openSpotifyPlaylist(playlist.externalUrl);
+            });
+
+            binding.playlistCardsContainer.addView(card);
+        }
+    }
+
+    private void openSpotifyPlaylist(String url) {
+        if (url == null || url.isEmpty()) {
+            Toast.makeText(requireContext(), "Playlist URL not available", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        try {
+            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+            startActivity(intent);
+        } catch (Exception e) {
+            Toast.makeText(requireContext(), "Cannot open link", Toast.LENGTH_SHORT).show();
         }
     }
 
