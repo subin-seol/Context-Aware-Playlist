@@ -90,8 +90,7 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-
-        <!-- Create My Vibe row -->
+        <!-- BEFORE GENERATION: Create My Vibe Card -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/createVibeCard"
             android:layout_width="match_parent"
@@ -163,6 +162,82 @@
                     android:textColor="@android:color/black" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
+
+        <!-- AFTER GENERATION: Current Mood Section -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/currentMoodCard"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_16"
+            android:visibility="gone"
+            app:cardBackgroundColor="@color/card_dark"
+            app:cardCornerRadius="@dimen/radius_20"
+            app:cardElevation="@dimen/elev_2"
+            app:strokeColor="@android:color/transparent"
+            app:strokeWidth="0dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="@dimen/space_16">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Current Mood"
+                    android:textColor="@color/text_primary"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:layout_marginBottom="@dimen/space_12" />
+
+                <com.google.android.material.chip.ChipGroup
+                    android:id="@+id/contextTagsGroup"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:chipSpacing="@dimen/space_8" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- AFTER GENERATION: Playlist Suggestions Section -->
+        <LinearLayout
+            android:id="@+id/playlistSuggestionsSection"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginTop="@dimen/space_16"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Playlist Suggestions"
+                android:textColor="@color/text_primary"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="@dimen/space_12" />
+
+            <LinearLayout
+                android:id="@+id/playlistCardsContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+        </LinearLayout>
+
+        <!-- AFTER GENERATION: Regenerate Button -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnRegenerate"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:text="Regenerate Playlist"
+            android:textColor="@color/teal_accent"
+            android:textAllCaps="false"
+            app:cornerRadius="12dp"
+            app:strokeColor="@color/teal_accent"
+            app:strokeWidth="1dp"
+            android:layout_marginTop="@dimen/space_16"
+            android:visibility="gone" />
 
 
         <!-- Stats row -->
