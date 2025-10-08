@@ -118,7 +118,6 @@ public class SnapFragment extends Fragment {
         binding.btnGenerate.setOnClickListener(v -> {
             // send image to analyser on background thread
             new Thread(() -> {
-                // send image to analyser on background thread
                 // TODO: move this to rule engine pipeline when GO button is clicked on homepage
                 ImageAnalyser imageAnalyzer = new ImageAnalyser(requireContext());
                 imageAnalyzer.analyzeImage((AppCompatActivity) requireActivity());
