@@ -1,4 +1,4 @@
-package com.comp90018.contexttunes.services;
+package com.comp90018.contexttunes.domain;
 
 import java.util.ArrayList;
 import java.util.List;
