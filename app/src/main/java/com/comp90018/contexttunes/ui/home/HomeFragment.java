@@ -32,6 +32,7 @@ import com.comp90018.contexttunes.domain.RuleEngine;
 import com.comp90018.contexttunes.ui.viewModel.SharedCameraViewModel;
 import com.comp90018.contexttunes.utils.PermissionManager;
 import com.comp90018.contexttunes.utils.PlaylistOpener;
+import com.comp90018.contexttunes.utils.SavedPlaylistsManager;
 import com.comp90018.contexttunes.utils.SettingsManager;
 import com.google.android.libraries.places.api.model.Place;
 
@@ -332,6 +333,8 @@ public class HomeFragment extends Fragment {
     private void populatePlaylistCards() {
         binding.playlistCardsContainer.removeAllViews();
 
+        SavedPlaylistsManager savedPlaylistsManager = new SavedPlaylistsManager(requireContext());
+
         for (Recommendation rec : currentRecommendations) {
             View card = getLayoutInflater().inflate(
                     com.comp90018.contexttunes.R.layout.item_playlist_card,
@@ -344,13 +347,43 @@ public class HomeFragment extends Fragment {
             TextView playlistReason = card.findViewById(com.comp90018.contexttunes.R.id.playlistReason);
             com.google.android.material.button.MaterialButton btnPlay =
                     card.findViewById(com.comp90018.contexttunes.R.id.btnPlay);
+            com.google.android.material.button.MaterialButton btnSave =
+                    card.findViewById(com.comp90018.contexttunes.R.id.btnSave);
 
             playlistName.setText(rec.playlist.name);
             playlistReason.setText(rec.reason);
 
+            // Set initial saved state
+            boolean isSaved = savedPlaylistsManager.isPlaylistSaved(rec.playlist);
+            updateSaveButtonIcon(btnSave, isSaved);
+
             btnPlay.setOnClickListener(v -> PlaylistOpener.openPlaylist(requireContext(), rec.playlist));
 
+            // Save/Unsaved button logic
+            btnSave.setOnClickListener(v -> {
+                boolean currentlySaved = savedPlaylistsManager.isRecommendationSaved(rec);
+                if (currentlySaved) {
+                    // Remove from saved playlists
+                    savedPlaylistsManager.unsaveRecommendation(rec);
+                    Toast.makeText(requireContext(), "Playlist removed from saved", Toast.LENGTH_SHORT).show();
+                } else {
+                    // Add to saved playlists
+                    savedPlaylistsManager.saveRecommendation(rec);
+                    Toast.makeText(requireContext(), "Playlist saved", Toast.LENGTH_SHORT).show();
+                }
+                // Update button icon and state
+                updateSaveButtonIcon(btnSave, !currentlySaved);
+            });
+
             binding.playlistCardsContainer.addView(card);
+        }
+    }
+
+    private void updateSaveButtonIcon(com.google.android.material.button.MaterialButton btnSave, boolean isSaved) {
+        if (isSaved) {
+            btnSave.setIconResource(com.comp90018.contexttunes.R.drawable.ic_saved);
+        } else {
+            btnSave.setIconResource(com.comp90018.contexttunes.R.drawable.ic_unsaved);
         }
     }
 
