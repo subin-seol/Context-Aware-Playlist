@@ -4,9 +4,6 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import android.util.Log;
 
-import androidx.appcompat.app.AppCompatActivity;
-import androidx.lifecycle.ViewModelProvider;
-
 import com.amazonaws.auth.CognitoCachingCredentialsProvider;
 import com.amazonaws.regions.Regions;
 import com.amazonaws.services.rekognition.AmazonRekognitionClient;
@@ -23,18 +20,17 @@ import java.nio.ByteBuffer;
 import java.util.List;
 
 public class ImageAnalyser {
+    private static final String TAG = "ImageAnalyser";
+    private static final int JPEG_QUALITY = 80;
+    private static final int MAX_LABELS = 10;
+    private static final float MIN_CONFIDENCE = 70f;
 
-    private ImageViewModel viewModel;
-    private AmazonRekognitionClient rekognitionClient;
+    private final Context appContext;
+    private volatile AmazonRekognitionClient rekognitionClient; // lazy init on worker
 
     public ImageAnalyser(Context context) {
-        // Initialize AWS Rekognition client
-        CognitoCachingCredentialsProvider credentialsProvider = new CognitoCachingCredentialsProvider(
-                context,
-                BuildConfig.AWS_MODEL_KEY,
-                Regions.AP_SOUTHEAST_2
-        );
-        rekognitionClient = new AmazonRekognitionClient(credentialsProvider);
+        this.appContext = context.getApplicationContext();
+
     }
 
     /**
@@ -48,22 +44,40 @@ public class ImageAnalyser {
     public void analyzeImage(ImageViewModel viewModel) {
         Bitmap bitmap = viewModel.getCapturedImage().getValue();
         if (bitmap != null) {
-            new Thread(() -> detectLabels(bitmap)).start();
+            new Thread(() -> detectLabels(bitmap, viewModel)).start();
         } else {
-            Log.w("ImageAnalyser", "No image captured");
+            Log.w(TAG, "No image captured");
             // Optionally notify observers with an empty labels object:
             viewModel.postImageLabels(new ImageLabels());
         }
     }
 
-    private void detectLabels(Bitmap bitmap) {
+    // Ensure client is initialized (thread-safe lazy init)
+    private AmazonRekognitionClient getClient() {
+        if (rekognitionClient == null) {
+            synchronized (this) {
+                if (rekognitionClient == null) {
+                    CognitoCachingCredentialsProvider credentialsProvider =
+                            new CognitoCachingCredentialsProvider(
+                                    appContext,
+                                    BuildConfig.AWS_MODEL_KEY,
+                                    Regions.AP_SOUTHEAST_2
+                            );
+                    rekognitionClient = new AmazonRekognitionClient(credentialsProvider);
+                }
+            }
+        }
+        return rekognitionClient;
+    }
+
+    private void detectLabels(Bitmap bitmap, ImageViewModel viewModel) {
         try {
             // Convert Bitmap to ByteBuffer
             ByteArrayOutputStream stream = new ByteArrayOutputStream();
             // Can add downscaling here if needed to reduce size, to avoid OOM or network issues
-            boolean ok = bitmap.compress(Bitmap.CompressFormat.JPEG, 80, stream);
+            boolean ok = bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, stream);
             if (!ok) {
-                Log.e("ImageAnalyser", "Bitmap.compress returned false");
+                Log.e(TAG, "Bitmap.compress returned false");
                 return;
             }
             byte[] imageBytes = stream.toByteArray();
@@ -72,16 +86,16 @@ public class ImageAnalyser {
             // Build Rekognition request
             DetectLabelsRequest request = new DetectLabelsRequest()
                     .withImage(awsImage)
-                    .withMaxLabels(10)
-                    .withMinConfidence(70f);
+                    .withMaxLabels(MAX_LABELS)
+                    .withMinConfidence(MIN_CONFIDENCE);
 
             // Call Rekognition (network I/O, must be off main thread)
-            DetectLabelsResult result = rekognitionClient.detectLabels(request);
+            DetectLabelsResult result = getClient().detectLabels(request);
             List<Label> labels = result.getLabels();
 
             // 4) Log + convert to our domain model
             if (labels == null || labels.isEmpty()) {
-                Log.d("ImageAnalyser", "No labels detected.");
+                Log.d(TAG, "No labels detected.");
                 // Still post an empty ImageLabels so observers know analysis finished
                 viewModel.postImageLabels(new ImageLabels());
                 return;
@@ -101,12 +115,12 @@ public class ImageAnalyser {
 
             // Log and post to VM (bg-safe)
             String finalDescription = description.toString();
-            Log.d("ImageAnalyser", finalDescription);
+            Log.d(TAG, finalDescription);
 
             viewModel.postImageLabels(imageLabels);
 
         } catch (Exception e) {
-            Log.e("ImageAnalyser", "Error analyzing image", e);
+            Log.e(TAG, "Error analyzing image", e);
         }
     }
 }
