@@ -34,6 +34,7 @@ android {
     buildFeatures {
         viewBinding = true
         buildConfig = true
+        mlModelBinding = true
     }
 }
 
@@ -57,6 +58,8 @@ dependencies {
     implementation("com.google.android.libraries.places:places:4.3.1")
     // Gson for JSON serialization
     implementation("com.google.code.gson:gson:2.10.1")
+    implementation("com.amazonaws:aws-android-sdk-core:2.54.0")
+    implementation("com.amazonaws:aws-android-sdk-rekognition:2.54.0")
 }
 
 secrets {

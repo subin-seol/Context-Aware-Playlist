@@ -29,7 +29,7 @@ import com.comp90018.contexttunes.databinding.FragmentHomeBinding;
 import com.comp90018.contexttunes.domain.Context;
 import com.comp90018.contexttunes.domain.Recommendation;
 import com.comp90018.contexttunes.domain.RuleEngine;
-import com.comp90018.contexttunes.ui.viewModel.SharedCameraViewModel;
+import com.comp90018.contexttunes.data.viewModel.ImageViewModel;
 import com.comp90018.contexttunes.utils.PermissionManager;
 import com.comp90018.contexttunes.utils.PlaylistOpener;
 import com.comp90018.contexttunes.utils.SavedPlaylistsManager;
@@ -73,6 +73,10 @@ public class HomeFragment extends Fragment {
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
 
+        // Get the shared ViewModel
+        ImageViewModel viewModel = new ViewModelProvider(requireActivity()).get(ImageViewModel.class);
+      
+        // init services/settings
         settingsManager = new SettingsManager(requireContext());
         locationSensor  = new LocationSensor(requireContext());
         googlePlacesAPI = GooglePlacesAPI.getInstance(requireContext());
@@ -116,8 +120,6 @@ public class HomeFragment extends Fragment {
         );
 
         // Observe camera state to toggle visibility of buttons
-        SharedCameraViewModel viewModel = new ViewModelProvider(requireActivity())
-                .get(SharedCameraViewModel.class);
         viewModel.getCapturedImage().observe(getViewLifecycleOwner(), bitmap -> {
             if (bitmap != null) {
                 binding.btnSnap.setVisibility(View.GONE);
