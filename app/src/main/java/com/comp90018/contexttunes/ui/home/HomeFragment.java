@@ -9,12 +9,16 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.content.BroadcastReceiver;
+import android.content.Intent;
+import android.content.IntentFilter;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.ViewModelProvider;
+import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
 import com.comp90018.contexttunes.BuildConfig;
 import com.comp90018.contexttunes.MainActivity;
@@ -34,6 +38,8 @@ import com.comp90018.contexttunes.utils.PermissionManager;
 import com.comp90018.contexttunes.utils.PlaylistOpener;
 import com.comp90018.contexttunes.utils.SettingsManager;
 import com.google.android.libraries.places.api.model.Place;
+import com.comp90018.contexttunes.services.SpeedSensorService;
+import com.comp90018.contexttunes.utils.AppEvents;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -58,6 +64,18 @@ public class HomeFragment extends Fragment {
     // Why are we asking for location permission right now?
     private enum Pending { NONE, WEATHER, PLACES }
     private Pending pending = Pending.NONE;
+
+    // --- Speed sensing (20s test) state ---
+    private boolean measuring = false;
+    private long   measureStartedAt = 0L;
+
+    // live/last values during the 30s window
+    @Nullable private Float  liveSpeedKmh   = null;
+    @Nullable private Float  liveCadenceSpm = null;
+    @Nullable private String liveActivity   = null;
+
+    // keep the last activity label to feed into RuleEngine after the window
+    private String lastActivityLabel = "still";
 
 
     @Nullable
@@ -84,6 +102,9 @@ public class HomeFragment extends Fragment {
         // Header
         binding.welcomeTitle.setText("Welcome back!");
         updateWeatherStatus(WeatherState.UNKNOWN);
+
+        // Ask once so foreground notification can show on Android 13+
+        ensureNotificationPermissionIfNeeded();
 
         // ---- LIGHT SENSOR (respect Settings) ----
         if (settingsManager.isLightEnabled()) {
@@ -112,6 +133,12 @@ public class HomeFragment extends Fragment {
         // ---- Generate / Regenerate ----
         binding.btnGo.setOnClickListener(v -> generateRecommendations());
         binding.btnRegenerate.setOnClickListener(v -> generateRecommendations());
+
+        // --- Sense (20s) test button ---
+        binding.btnSenseTest.setOnClickListener(v -> {
+            if (measuring) return;
+            ensurePermsThenSense();
+        });
 
         // ---- Preview captured image ----
         binding.btnPreviewImage.setOnClickListener(v ->
@@ -381,6 +408,88 @@ public class HomeFragment extends Fragment {
         });
     }
 
+    // ===================== SPEED SENSING =====================
+    // Receive frames from SpeedSensorService (~1 Hz)
+    private final BroadcastReceiver speedRx = new BroadcastReceiver() {
+        @Override public void onReceive(android.content.Context ctx, Intent i) {
+            if (!AppEvents.ACTION_SPEED_UPDATE.equals(i.getAction())) return;
+
+            float kmh = i.getFloatExtra(AppEvents.EXTRA_SPEED_KMH, 0f);
+            float spm = i.getFloatExtra(AppEvents.EXTRA_CADENCE_SPM, Float.NaN);
+            String act = i.getStringExtra(AppEvents.EXTRA_ACTIVITY);
+            boolean isFinal = i.getBooleanExtra(AppEvents.EXTRA_IS_FINAL, false);
+
+            liveSpeedKmh   = kmh;
+            liveCadenceSpm = Float.isNaN(spm) ? null : spm;
+            liveActivity   = (act == null || act.isEmpty()) ? "still" : act;
+
+            // Optional: show live numbers somewhere (Toast or a small TextView)
+            // For a simple smoke test:
+            // Toast.makeText(requireContext(), String.format(Locale.getDefault(),
+            //         "%s · %.1f km/h · %s", liveActivity, kmh,
+            //         (liveCadenceSpm==null?"–":String.format("%.0f spm", liveCadenceSpm))), Toast.LENGTH_SHORT).show();
+
+            if (isFinal) {
+                measuring = false;
+                lastActivityLabel = liveActivity == null ? "still" : liveActivity;
+                onSensingFinished();
+            }
+        }
+    };
+
+    /** Kick a 20s sensing window (foreground service via Intent action). */
+    private void startSpeedWindow() {
+        Intent i = new Intent(requireContext(), SpeedSensorService.class)
+                .setAction(AppEvents.ACTION_SPEED_SAMPLE_NOW);
+        androidx.core.content.ContextCompat.startForegroundService(requireContext(), i);
+    }
+
+    /** Gate by permissions, then start the window. */
+    private void ensurePermsThenSense() {
+        if (PermissionManager.hasActivityRecognition(requireContext())
+                && PermissionManager.hasAnyLocation(requireContext())) {
+            measuring = true;
+            measureStartedAt = System.currentTimeMillis();
+            liveSpeedKmh = null; liveCadenceSpm = null; liveActivity = null;
+
+            Toast.makeText(requireContext(), "Measuring activity for 20s…", Toast.LENGTH_SHORT).show();
+            startSpeedWindow();
+        } else {
+            PermissionManager.requestSpeedSensing(this);
+            // After user grants in onRequestPermissionsResult, call ensurePermsThenSense() again
+        }
+    }
+
+    /** Show the final sensed values without touching recommendations. */
+    // Called when measuring window ends in final frame
+    private void onSensingFinished() {
+        String summary = String.format(
+                java.util.Locale.getDefault(),
+                "Detected: %s • %s • %s",
+                (liveActivity == null ? "still" :
+                        liveActivity.substring(0,1).toUpperCase()+liveActivity.substring(1)),
+                (liveSpeedKmh==null ? "-" : String.format(java.util.Locale.getDefault(), "%.1f km/h", liveSpeedKmh)),
+                (liveCadenceSpm==null ? "-" : String.format(java.util.Locale.getDefault(), "%.0f spm", liveCadenceSpm))
+        );
+        Toast.makeText(requireContext(), summary, Toast.LENGTH_SHORT).show();
+    }
+
+    private static final int REQ_NOTIFICATIONS = 2001;
+
+    private void ensureNotificationPermissionIfNeeded() {
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            if (ContextCompat.checkSelfPermission(
+                    requireContext(), android.Manifest.permission.POST_NOTIFICATIONS
+            ) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(
+                        new String[]{ android.Manifest.permission.POST_NOTIFICATIONS },
+                        REQ_NOTIFICATIONS
+                );
+            }
+        }
+    }
+
+
     // ===================== PERMISSION RESULT =====================
 
     @Override
@@ -388,6 +497,20 @@ public class HomeFragment extends Fragment {
                                            @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
 
+        // --- SENSING PERMISSIONS (Activity + Multi-Location) ---
+        if (requestCode == PermissionManager.REQ_LOCATION_MULTI
+                || requestCode == PermissionManager.REQ_ACTIVITY) {
+            boolean anyGranted = false;
+            for (int r : grantResults) if (r == PackageManager.PERMISSION_GRANTED) { anyGranted = true; break; }
+            if (anyGranted) {
+                ensurePermsThenSense();
+            } else {
+                Toast.makeText(requireContext(), "Permissions needed for activity sensing", Toast.LENGTH_SHORT).show();
+            }
+            return;
+        }
+
+        // --- WEATHER / PLACES LOCATION (single fine location) ---
         if (requestCode == PermissionManager.REQ_LOCATION) {
             boolean granted = grantResults.length > 0
                     && grantResults[0] == PackageManager.PERMISSION_GRANTED;
@@ -403,7 +526,6 @@ public class HomeFragment extends Fragment {
                 return;
             }
 
-            // Granted → resume original intent
             if (pending == Pending.WEATHER) {
                 fetchWeatherData();
             } else if (pending == Pending.PLACES) {
@@ -428,11 +550,18 @@ public class HomeFragment extends Fragment {
         if (lightSensor != null && settingsManager.isLightEnabled()) {
             lightSensor.start();
         }
+
+        // listen only while fragment is visible
+        LocalBroadcastManager.getInstance(requireContext())
+                .registerReceiver(speedRx, new IntentFilter(AppEvents.ACTION_SPEED_UPDATE));
     }
 
     @Override
     public void onStop() {
         if (lightSensor != null) lightSensor.stop();
+        try {
+            LocalBroadcastManager.getInstance(requireContext()).unregisterReceiver(speedRx);
+        } catch (Exception ignore) {}
         super.onStop();
     }
 
