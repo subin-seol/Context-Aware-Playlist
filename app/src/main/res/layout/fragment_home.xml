@@ -445,12 +445,19 @@
                     android:includeFontPadding="false"/>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
-
-        <Button
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/btn_fetch_places"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Fetch Nearby Places" />
+            android:text="Fetch Nearby Places"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnSenseTest"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Sense (20s)" />
 
         <!-- Loading Container -->
         <LinearLayout
