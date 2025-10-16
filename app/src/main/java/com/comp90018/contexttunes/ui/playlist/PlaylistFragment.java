@@ -4,6 +4,7 @@ import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -13,9 +14,9 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 
+import com.bumptech.glide.Glide;
 import com.comp90018.contexttunes.R;
-import com.comp90018.contexttunes.domain.Playlist;
-import com.comp90018.contexttunes.domain.Recommendation;
+import com.comp90018.contexttunes.domain.SpotifyPlaylist;
 import com.comp90018.contexttunes.utils.PlaylistOpener;
 import com.comp90018.contexttunes.utils.SavedPlaylistsManager;
 import com.google.android.material.button.MaterialButton;
@@ -59,15 +60,15 @@ public class PlaylistFragment extends Fragment {
     }
 
     private void loadSavedPlaylists() {
-        List<Recommendation> savedRecommendations = savedPlaylistsManager.getSavedRecommendations();
+        List<SpotifyPlaylist> savedPlaylists = savedPlaylistsManager.getSavedSpotifyPlaylists();
 
         // Clear existing views
         savedPlaylistsContainer.removeAllViews();
 
-        if (savedRecommendations.isEmpty()) {
+        if (savedPlaylists.isEmpty()) {
             showEmptyState();
         } else {
-            showPlaylistsContent(savedRecommendations);
+            showPlaylistsContent(savedPlaylists);
         }
     }
 
@@ -76,31 +77,35 @@ public class PlaylistFragment extends Fragment {
         emptyStateLayout.setVisibility(View.VISIBLE);
     }
 
-    private void showPlaylistsContent(List<Recommendation> savedRecommendations) {
+    private void showPlaylistsContent(List<SpotifyPlaylist> savedPlaylists) {
         emptyStateLayout.setVisibility(View.GONE);
         playlistScrollView.setVisibility(View.VISIBLE);
 
-        for (Recommendation recommendation : savedRecommendations) {
+        for (SpotifyPlaylist playlist : savedPlaylists) {
             View card = getLayoutInflater().inflate(
                     R.layout.item_saved_playlist_card,
                     savedPlaylistsContainer,
                     false
             );
 
+            ImageView img = card.findViewById(R.id.playlistImage);
             TextView playlistName = card.findViewById(R.id.playlistName);
-            TextView playlistReason = card.findViewById(R.id.playlistReason);
+            TextView playlistMeta = card.findViewById(R.id.playlistMeta);
             MaterialButton btnPlay = card.findViewById(R.id.btnPlay);
             MaterialButton btnSave = card.findViewById(R.id.btnSave);
 
-            playlistName.setText(recommendation.playlist.name);
-            playlistReason.setText(recommendation.reason);
+            playlistName.setText(playlist.name);
+            playlistMeta.setText(playlist.ownerName + " • " + playlist.totalTracks + " tracks");
+            if (playlist.imageUrl != null && !playlist.imageUrl.isEmpty()) {
+                Glide.with(requireContext()).load(playlist.imageUrl).into(img);
+            }
 
             // Play button functionality
-            btnPlay.setOnClickListener(v -> PlaylistOpener.openPlaylist(requireContext(), recommendation.playlist));
+            btnPlay.setOnClickListener(v -> PlaylistOpener.openPlaylist(requireContext(), playlist));
 
             // Remove button functionality (bookmark is filled since it's saved)
             btnSave.setOnClickListener(v -> {
-                savedPlaylistsManager.unsaveRecommendation(recommendation);
+                savedPlaylistsManager.unsaveSpotifyPlaylist(playlist);
                 Toast.makeText(requireContext(), "Playlist removed from saved", Toast.LENGTH_SHORT).show();
                 loadSavedPlaylists(); // Refresh the list
             });

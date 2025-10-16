@@ -66,9 +66,6 @@ public class HomeFragment extends Fragment {
 
     private List<SpotifyPlaylist> spotifyPlaylists = new ArrayList<>();
     private boolean playlistsGenerated = false;
-
-    private Recommendation currentRecommendation = null;
-    private List<Recommendation> currentRecommendations = new ArrayList<>();
     private boolean recommendationsGenerated = false;
 
     // Why are we asking for location permission right now?
@@ -274,21 +271,7 @@ public class HomeFragment extends Fragment {
 
             Recommendation rec = RuleEngine.getRecommendation(ctx);
             binding.welcomeSubtitle.setText(rec.reason);
-            currentRecommendation = rec;
         }
-    }
-
-    private void generateRecommendations() {
-        String timeOfDay = RuleEngine.getCurrentTimeOfDay();
-        String activity  = "still";
-        Context ctx = new Context(currentLightBucket, timeOfDay, activity, currentWeather);
-
-        // Get multiple recommendations
-        currentRecommendations = RuleEngine.getMultipleRecommendations(ctx);
-        recommendationsGenerated = true;
-
-        // Update UI to show generated state
-        showGeneratedState();
     }
 
     private void showGeneratedState() {
@@ -367,56 +350,6 @@ public class HomeFragment extends Fragment {
         chip.setClickable(false);
         chip.setChipCornerRadius(24f);
         binding.contextTagsGroup.addView(chip);
-    }
-
-    // Populate playlist cards based on current recommendations
-    private void populatePlaylistCards() {
-        binding.playlistCardsContainer.removeAllViews();
-
-        SavedPlaylistsManager savedPlaylistsManager = new SavedPlaylistsManager(requireContext());
-
-        for (Recommendation rec : currentRecommendations) {
-            View card = getLayoutInflater().inflate(
-                    com.comp90018.contexttunes.R.layout.item_playlist_card,
-                    binding.playlistCardsContainer,
-                    false
-            );
-
-            // Potentially use View Binding here in the future to stay consistent
-            TextView playlistName   = card.findViewById(com.comp90018.contexttunes.R.id.playlistName);
-            TextView playlistReason = card.findViewById(com.comp90018.contexttunes.R.id.playlistReason);
-            com.google.android.material.button.MaterialButton btnPlay =
-                    card.findViewById(com.comp90018.contexttunes.R.id.btnPlay);
-            com.google.android.material.button.MaterialButton btnSave =
-                    card.findViewById(com.comp90018.contexttunes.R.id.btnSave);
-
-            playlistName.setText(rec.playlist.name);
-            playlistReason.setText(rec.reason);
-
-            // Set initial saved state
-            boolean isSaved = savedPlaylistsManager.isPlaylistSaved(rec.playlist);
-            updateSaveButtonIcon(btnSave, isSaved);
-
-            btnPlay.setOnClickListener(v -> PlaylistOpener.openPlaylist(requireContext(), rec.playlist));
-
-            // Save/Unsaved button logic
-            btnSave.setOnClickListener(v -> {
-                boolean currentlySaved = savedPlaylistsManager.isRecommendationSaved(rec);
-                if (currentlySaved) {
-                    // Remove from saved playlists
-                    savedPlaylistsManager.unsaveRecommendation(rec);
-                    Toast.makeText(requireContext(), "Playlist removed from saved", Toast.LENGTH_SHORT).show();
-                } else {
-                    // Add to saved playlists
-                    savedPlaylistsManager.saveRecommendation(rec);
-                    Toast.makeText(requireContext(), "Playlist saved", Toast.LENGTH_SHORT).show();
-                }
-                // Update button icon and state
-                updateSaveButtonIcon(btnSave, !currentlySaved);
-            });
-
-            binding.playlistCardsContainer.addView(card);
-        }
     }
 
     private void updateSaveButtonIcon(com.google.android.material.button.MaterialButton btnSave, boolean isSaved) {
@@ -686,6 +619,8 @@ public class HomeFragment extends Fragment {
         Log.d(TAG, "Populating " + spotifyPlaylists.size() + " playlist cards");
         binding.playlistCardsContainer.removeAllViews();
 
+        SavedPlaylistsManager saved = new SavedPlaylistsManager(requireContext());
+
         for (SpotifyPlaylist playlist : spotifyPlaylists) {
             View card = getLayoutInflater().inflate(
                     R.layout.item_playlist_card,
@@ -695,8 +630,10 @@ public class HomeFragment extends Fragment {
 
             ImageView playlistImage = card.findViewById(R.id.playlistImage);
             TextView playlistName = card.findViewById(R.id.playlistName);
-            TextView playlistReason = card.findViewById(R.id.playlistReason);
+            TextView playlistMeta = card.findViewById(R.id.playlistMeta);
             com.google.android.material.button.MaterialButton btnPlay = card.findViewById(R.id.btnPlay);
+            com.google.android.material.button.MaterialButton btnSave =
+                    card.findViewById(R.id.btnSave); // bookmark toggle
 
             if (playlist.imageUrl != null && !playlist.imageUrl.isEmpty()) {
                 Glide.with(requireContext())
@@ -705,27 +642,29 @@ public class HomeFragment extends Fragment {
             }
 
             playlistName.setText(playlist.name);
-            playlistReason.setText(playlist.ownerName + " • " + playlist.totalTracks + " tracks");
+            playlistMeta.setText(playlist.ownerName + " • " + playlist.totalTracks + " tracks");
 
             btnPlay.setOnClickListener(v -> {
                 Log.d(TAG, "Opening playlist: " + playlist.externalUrl);
-                openSpotifyPlaylist(playlist.externalUrl);
+                PlaylistOpener.openPlaylist(requireContext(), playlist);
+            });
+
+            // Initial saved state & icon
+            boolean isSaved = saved.isSpotifyPlaylistSaved(playlist);
+            updateSaveButtonIcon(btnSave, isSaved);
+            btnSave.setOnClickListener(v -> {
+                boolean currentlySaved = saved.isSpotifyPlaylistSaved(playlist);
+                if (currentlySaved) {
+                    saved.unsaveSpotifyPlaylist(playlist);
+                    Toast.makeText(requireContext(), "Playlist removed from saved", Toast.LENGTH_SHORT).show();
+                } else {
+                    saved.saveSpotifyPlaylist(playlist);
+                    Toast.makeText(requireContext(), "Playlist saved", Toast.LENGTH_SHORT).show();
+                }
+                updateSaveButtonIcon(btnSave, !currentlySaved);
             });
 
             binding.playlistCardsContainer.addView(card);
-        }
-    }
-
-    private void openSpotifyPlaylist(String url) {
-        if (url == null || url.isEmpty()) {
-            Toast.makeText(requireContext(), "Playlist URL not available", Toast.LENGTH_SHORT).show();
-            return;
-        }
-        try {
-            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
-            startActivity(intent);
-        } catch (Exception e) {
-            Toast.makeText(requireContext(), "Cannot open link", Toast.LENGTH_SHORT).show();
         }
     }
 

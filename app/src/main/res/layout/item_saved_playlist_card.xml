@@ -18,6 +18,15 @@
         android:padding="@dimen/space_16"
         android:gravity="center_vertical">
 
+        <!-- Playlist Image -->
+        <ImageView
+            android:id="@+id/playlistImage"
+            android:layout_width="60dp"
+            android:layout_height="60dp"
+            android:layout_marginEnd="@dimen/space_12"
+            android:scaleType="centerCrop"
+            android:contentDescription="Playlist cover image" />
+
         <!-- Playlist Info -->
         <LinearLayout
             android:layout_width="0dp"
@@ -35,7 +44,7 @@
                 android:textStyle="bold" />
 
             <TextView
-                android:id="@+id/playlistReason"
+                android:id="@+id/playlistMeta"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_4"
