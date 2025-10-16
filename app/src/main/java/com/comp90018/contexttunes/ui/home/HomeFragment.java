@@ -34,6 +34,8 @@ import com.comp90018.contexttunes.utils.PermissionManager;
 import com.comp90018.contexttunes.utils.PlaylistOpener;
 import com.comp90018.contexttunes.utils.SettingsManager;
 import com.google.android.libraries.places.api.model.Place;
+import com.comp90018.contexttunes.data.ai.AIPlaylistRecommender;
+import com.comp90018.contexttunes.utils.LocationContextHelper;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -59,6 +61,10 @@ public class HomeFragment extends Fragment {
     private enum Pending { NONE, WEATHER, PLACES }
     private Pending pending = Pending.NONE;
 
+    private AIPlaylistRecommender aiRecommender;
+    private LocationContextHelper locationHelper;
+    private boolean isGenerating = false;
+
 
     @Nullable
     @Override
@@ -76,6 +82,9 @@ public class HomeFragment extends Fragment {
         locationSensor  = new LocationSensor(requireContext());
         googlePlacesAPI = GooglePlacesAPI.getInstance(requireContext());
         mockWeatherService = new MockWeatherService(requireContext());
+        aiRecommender = new AIPlaylistRecommender();
+        locationHelper = new LocationContextHelper(requireContext());
+
 
         // Header
         binding.welcomeTitle.setText("Welcome back!");
@@ -236,16 +245,129 @@ public class HomeFragment extends Fragment {
     }
 
     private void generateRecommendations() {
+        if (isGenerating) {
+            Log.d(TAG, "Already generating, ignoring click");
+            return;
+        }
+        isGenerating = true;
+
+        // Show loading state
+        binding.btnGo.setEnabled(false);
+        binding.btnGo.setText("Generating...");
+
+        // Collect non-location context
         String timeOfDay = RuleEngine.getCurrentTimeOfDay();
-        String activity  = "still";
-        Context ctx = new Context(currentLightBucket, timeOfDay, activity, currentWeather);
+        String activity = "still"; // TODO: get from accelerometer when implemented
 
-        // Get multiple recommendations
-        currentRecommendations = RuleEngine.getMultipleRecommendations(ctx);
-        recommendationsGenerated = true;
+        // Step 1: Get location context (if permission granted)
+        if (settingsManager.isLocationEnabled() &&
+                PermissionManager.hasLocationPermission(requireContext())) {
 
-        // Update UI to show generated state
-        showGeneratedState();
+            Log.d(TAG, "Fetching location context...");
+
+            locationSensor.getCurrentLocation(location -> {
+                if (location != null) {
+                    // Get location context (tagged place or nearby places)
+                    locationHelper.getLocationContext(location, (placeTag, nearbyPlaceTypes) -> {
+                        requireActivity().runOnUiThread(() -> {
+                            // Build full context with location
+                            Context ctx = new Context(
+                                    currentLightBucket,
+                                    timeOfDay,
+                                    activity,
+                                    currentWeather,
+                                    placeTag,
+                                    nearbyPlaceTypes
+                            );
+
+                            proceedWithRecommendation(ctx);
+                        });
+                    });
+                } else {
+                    // Location fetch failed, proceed without location
+                    Log.w(TAG, "Location unavailable, proceeding without it");
+                    requireActivity().runOnUiThread(() -> {
+                        Context ctx = new Context(currentLightBucket, timeOfDay, activity, currentWeather);
+                        proceedWithRecommendation(ctx);
+                    });
+                }
+            });
+        } else {
+            // Location disabled or no permission, proceed without it
+            Log.d(TAG, "Location disabled or no permission, proceeding without it");
+            Context ctx = new Context(currentLightBucket, timeOfDay, activity, currentWeather);
+            proceedWithRecommendation(ctx);
+        }
+    }
+
+    /**
+     * Helper method to generate recommendations once context is ready.
+     */
+    private void proceedWithRecommendation(@NonNull Context ctx) {
+        if (settingsManager.isAIMode()) {
+            // Use AI inference
+            Log.d(TAG, "Using AI mode for recommendations");
+
+            aiRecommender.getRecommendations(ctx, new AIPlaylistRecommender.AICallback() {
+                @Override
+                public void onSuccess(@NonNull List<Recommendation> recommendations) {
+
+                    Log.d(TAG, "AI SUCCESS - received " + recommendations.size() + " recommendations");
+                    for (int i = 0; i < recommendations.size(); i++) {
+                        Recommendation rec = recommendations.get(i);
+                        Log.d(TAG, "  " + (i+1) + ". " + rec.playlist.name + " - " + rec.reason);
+                    }
+                    currentRecommendations = recommendations;
+                    recommendationsGenerated = true;
+
+
+                    Log.d(TAG, "AI returned " + recommendations.size() + " recommendations");
+                    currentRecommendations = recommendations;
+                    recommendationsGenerated = true;
+
+                    // Reset button state
+                    binding.btnGo.setEnabled(true);
+                    binding.btnGo.setText("GO");
+                    isGenerating = false;
+
+                    showGeneratedState();
+                    Toast.makeText(requireContext(),
+                            "✨ AI recommendations ready",
+                            Toast.LENGTH_SHORT).show();
+                }
+
+                @Override
+                public void onError(@NonNull Exception e) {
+                    Log.e(TAG, "AI inference failed, using rule fallback", e);
+
+                    // Fall back to rule engine
+                    currentRecommendations = RuleEngine.getMultipleRecommendations(ctx);
+                    recommendationsGenerated = true;
+
+                    // Reset button state
+                    binding.btnGo.setEnabled(true);
+                    binding.btnGo.setText("GO");
+                    isGenerating = false;
+
+                    showGeneratedState();
+                    Toast.makeText(requireContext(),
+                            "Using rule-based recommendations",
+                            Toast.LENGTH_SHORT).show();
+                }
+            });
+        } else {
+            // Use rule engine
+            Log.d(TAG, "Using rule engine for recommendations");
+            currentRecommendations = RuleEngine.getMultipleRecommendations(ctx);
+            recommendationsGenerated = true;
+
+            // Reset button state
+            binding.btnGo.setEnabled(true);
+            binding.btnGo.setText("GO");
+            isGenerating = false;
+
+            showGeneratedState();
+        }
     }
 
     private void showGeneratedState() {
@@ -262,23 +384,15 @@ public class HomeFragment extends Fragment {
         binding.playlistSuggestionsSection.setVisibility(View.VISIBLE);
         populatePlaylistCards();
 
+        // Show/hide AI badge
+        if (settingsManager.isAIMode()) {
+            binding.aiModeBadge.setVisibility(View.VISIBLE);
+        } else {
+            binding.aiModeBadge.setVisibility(View.GONE);
+        }
+
         // Show regenerate button
         binding.btnRegenerate.setVisibility(View.VISIBLE);
-    }
-
-    private void showBeforeGenerationState() {
-        if (binding == null) return;
-
-        // Show "Create My Vibe" card
-        binding.createVibeCard.setVisibility(View.VISIBLE);
-        binding.welcomeSubtitle.setVisibility(View.VISIBLE);
-
-        // Hide "after generation" elements
-        binding.currentMoodCard.setVisibility(View.GONE);
-        binding.playlistSuggestionsSection.setVisibility(View.GONE);
-        binding.btnRegenerate.setVisibility(View.GONE);
-
-        recommendationsGenerated = false;
     }
 
     private void populateContextTags() {
