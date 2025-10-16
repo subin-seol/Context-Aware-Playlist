@@ -1,11 +1,15 @@
-package com.comp90018.contexttunes.services;
+package com.comp90018.contexttunes.data.api;
 
-// SpotifyApiService.java
 import android.os.Handler;
 import android.os.Looper;
+
+import com.comp90018.contexttunes.domain.SpotifyPlaylist;
+
 import org.json.JSONArray;
 import org.json.JSONObject;
+
 import java.io.BufferedReader;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -15,14 +19,14 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-public class SpotifyApiService {
+public class SpotifyAPI {
 
     private static final String BASE_URL = "https://api.spotify.com/v1/search";
     private String accessToken;
     private ExecutorService executorService;
     private Handler mainHandler;
 
-    public SpotifyApiService(String accessToken) {
+    public SpotifyAPI(String accessToken) {
         this.accessToken = accessToken;
         this.executorService = Executors.newSingleThreadExecutor();
         this.mainHandler = new Handler(Looper.getMainLooper());
@@ -30,7 +34,7 @@ public class SpotifyApiService {
 
     // Callback interface for async results
     public interface PlaylistCallback {
-        void onSuccess(List<Playlist> playlists);
+        void onSuccess(List<SpotifyPlaylist> playlists);
         void onError(String error);
     }
 
@@ -38,7 +42,7 @@ public class SpotifyApiService {
     public void searchPlaylists(String query, int limit, PlaylistCallback callback) {
         executorService.execute(() -> {
             try {
-                List<Playlist> playlists = performSearch(query, limit);
+                List<SpotifyPlaylist> playlists = performSearch(query, limit);
                 mainHandler.post(() -> callback.onSuccess(playlists));
             } catch (Exception e) {
                 String errorMsg = e.getMessage();
@@ -47,8 +51,8 @@ public class SpotifyApiService {
         });
     }
 
-    private List<Playlist> performSearch(String query, int limit) throws Exception {
-        List<Playlist> playlists = new ArrayList<>();
+    private List<SpotifyPlaylist> performSearch(String query, int limit) throws Exception {
+        List<SpotifyPlaylist> playlists = new ArrayList<>();
 
         String encodedQuery = URLEncoder.encode(query, "UTF-8");
         String urlString = BASE_URL + "?q=" + encodedQuery +
@@ -59,19 +63,21 @@ public class SpotifyApiService {
         conn.setRequestMethod("GET");
         conn.setRequestProperty("Authorization", "Bearer " + accessToken);
         conn.setRequestProperty("Content-Type", "application/json");
+        conn.setConnectTimeout(8000);
+        conn.setReadTimeout(10000);
 
         int responseCode = conn.getResponseCode();
+        InputStream is = responseCode >= 400 ? conn.getErrorStream() : conn.getInputStream();
+        if (is == null) {
+            conn.disconnect();
+            throw new Exception("HTTP " + responseCode);
+        }
 
-        if (responseCode == HttpURLConnection.HTTP_OK) {
-            BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(conn.getInputStream()));
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(is))) {
             StringBuilder response = new StringBuilder();
-            String line;
+            for (String line; (line = reader.readLine()) != null; ) response.append(line);
 
-            while ((line = reader.readLine()) != null) {
-                response.append(line);
-            }
-            reader.close();
+            if (responseCode >= 400) throw new Exception("HTTP " + responseCode + ": " + response.toString());
 
             // Parse JSON response
             JSONObject jsonResponse = new JSONObject(response.toString());
@@ -79,7 +85,6 @@ public class SpotifyApiService {
             JSONArray items = playlistsObj.getJSONArray("items");
 
             for (int i = 0; i < items.length(); i++) {
-                try {
                     // Check if item is null
                     if (items.isNull(i)) {
                         continue;
@@ -115,18 +120,13 @@ public class SpotifyApiService {
                         externalUrl = urls.optString("spotify", "");
                     }
 
-                    playlists.add(new Playlist(id, name, description, imageUrl,
+                    playlists.add(new SpotifyPlaylist(id, name, description, imageUrl,
                             ownerName, totalTracks, externalUrl));
-                } catch (Exception e) {
-                    // Skip this playlist if there's an error parsing it
-                    continue;
-                }
             }
-        } else {
-            throw new Exception("HTTP Error: " + responseCode);
+        } finally {
+            conn.disconnect();
         }
 
-        conn.disconnect();
         return playlists;
     }
 
@@ -134,28 +134,6 @@ public class SpotifyApiService {
     public void shutdown() {
         if (executorService != null && !executorService.isShutdown()) {
             executorService.shutdown();
-        }
-    }
-
-    // Playlist model class
-    public static class Playlist {
-        public String id;
-        public String name;
-        public String description;
-        public String imageUrl;
-        public String ownerName;
-        public int totalTracks;
-        public String externalUrl;
-
-        public Playlist(String id, String name, String description, String imageUrl,
-                        String ownerName, int totalTracks, String externalUrl) {
-            this.id = id;
-            this.name = name;
-            this.description = description;
-            this.imageUrl = imageUrl;
-            this.ownerName = ownerName;
-            this.totalTracks = totalTracks;
-            this.externalUrl = externalUrl;
         }
     }
 }

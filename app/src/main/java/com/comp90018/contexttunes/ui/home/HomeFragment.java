@@ -34,7 +34,8 @@ import com.comp90018.contexttunes.databinding.FragmentHomeBinding;
 import com.comp90018.contexttunes.domain.Context;
 import com.comp90018.contexttunes.domain.Recommendation;
 import com.comp90018.contexttunes.domain.RuleEngine;
-import com.comp90018.contexttunes.services.SpotifyApiService;
+import com.comp90018.contexttunes.data.api.SpotifyAPI;
+import com.comp90018.contexttunes.domain.SpotifyPlaylist;
 import com.comp90018.contexttunes.ui.viewModel.SharedCameraViewModel;
 import com.comp90018.contexttunes.utils.PermissionManager;
 import com.comp90018.contexttunes.utils.SettingsManager;
@@ -56,7 +57,7 @@ public class HomeFragment extends Fragment {
     private WeatherState currentWeather = WeatherState.UNKNOWN;
     private LightBucket currentLightBucket = LightBucket.UNKNOWN;
 
-    private List<SpotifyApiService.Playlist> spotifyPlaylists = new ArrayList<>();
+    private List<SpotifyPlaylist> spotifyPlaylists = new ArrayList<>();
     private boolean playlistsGenerated = false;
 
     private Recommendation currentRecommendation = null;
@@ -66,7 +67,7 @@ public class HomeFragment extends Fragment {
     // Why are we asking for location permission right now?
     private enum Pending { NONE, WEATHER, PLACES }
     private Pending pending = Pending.NONE;
-    private SpotifyApiService spotifyApiService;
+    private SpotifyAPI spotifyAPI;
 
 
     @Nullable
@@ -85,7 +86,7 @@ public class HomeFragment extends Fragment {
         locationSensor  = new LocationSensor(requireContext());
         googlePlacesAPI = GooglePlacesAPI.getInstance(requireContext());
         mockWeatherService = new MockWeatherService(requireContext());
-        spotifyApiService = new SpotifyApiService(BuildConfig.SPOTIFY_ACCESS_TOKEN);
+        spotifyAPI = new SpotifyAPI(BuildConfig.SPOTIFY_ACCESS_TOKEN);
 
 
         // Header
@@ -425,9 +426,9 @@ public class HomeFragment extends Fragment {
         // Show loading
         binding.loadingContainer.setVisibility(View.VISIBLE);
 
-        spotifyApiService.searchPlaylists(query, 5, new SpotifyApiService.PlaylistCallback() {
+        spotifyAPI.searchPlaylists(query, 5, new SpotifyAPI.PlaylistCallback() {
             @Override
-            public void onSuccess(List<SpotifyApiService.Playlist> playlists) {
+            public void onSuccess(List<SpotifyPlaylist> playlists) {
                 if (getActivity() == null) return;
 
                 requireActivity().runOnUiThread(() -> {
@@ -454,9 +455,10 @@ public class HomeFragment extends Fragment {
                     populateContextTags();
                     populateSpotifyPlaylistCards();
 
-                    if (playlists.isEmpty()) {
-                        Toast.makeText(requireContext(), "No playlists found. Try again!", Toast.LENGTH_SHORT).show();
-                    }
+                    // Inline empty state (no toast-only)
+                    binding.playlistEmptyText.setVisibility(
+                            playlists.isEmpty() ? View.VISIBLE : View.GONE
+                    );
                 });
             }
 
@@ -476,6 +478,10 @@ public class HomeFragment extends Fragment {
                         binding.currentMoodCard.setVisibility(View.VISIBLE);
                         binding.regenerateCard.setVisibility(View.VISIBLE);
                         binding.playlistSuggestionsSection.setVisibility(View.VISIBLE);
+                        // Show inline error as empty state
+                        binding.playlistCardsContainer.removeAllViews();
+                        binding.playlistEmptyText.setText(getString(R.string.no_playlists_found));
+                        binding.playlistEmptyText.setVisibility(View.VISIBLE);
                     } else {
                         // First time error - show BEFORE generation state
                         binding.welcomeCard.setVisibility(View.VISIBLE);
@@ -483,9 +489,8 @@ public class HomeFragment extends Fragment {
                         binding.statsRow.setVisibility(View.VISIBLE);
                         binding.recentTitle.setVisibility(View.VISIBLE);
                         binding.recentItem.setVisibility(View.VISIBLE);
+                        Toast.makeText(requireContext(), "Error fetching playlists. Try again.", Toast.LENGTH_SHORT).show();
                     }
-
-                    Toast.makeText(requireContext(), "Error fetching playlists: " + error, Toast.LENGTH_SHORT).show();
                 });
             }
         });
@@ -496,7 +501,7 @@ public class HomeFragment extends Fragment {
         Log.d(TAG, "Populating " + spotifyPlaylists.size() + " playlist cards");
         binding.playlistCardsContainer.removeAllViews();
 
-        for (SpotifyApiService.Playlist playlist : spotifyPlaylists) {
+        for (SpotifyPlaylist playlist : spotifyPlaylists) {
             View card = getLayoutInflater().inflate(
                     R.layout.item_playlist_card,
                     binding.playlistCardsContainer,
@@ -559,6 +564,9 @@ public class HomeFragment extends Fragment {
     public void onDestroyView() {
         if (mockWeatherService != null) {
             mockWeatherService.shutdown();
+        }
+        if (spotifyAPI != null) {
+            spotifyAPI.shutdown();
         }
         binding = null;
         super.onDestroyView();

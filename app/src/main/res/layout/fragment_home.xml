@@ -287,6 +287,17 @@
                     android:textStyle="bold" />
             </LinearLayout>
 
+            <TextView
+                android:id="@+id/playlistEmptyText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:padding="@dimen/space_12"
+                android:text="@string/no_playlists_found"
+                android:textColor="@color/text_secondary"
+                android:textSize="14sp"
+                android:gravity="center"
+                android:visibility="gone"/>
+
             <LinearLayout
                 android:id="@+id/playlistCardsContainer"
                 android:layout_width="match_parent"
