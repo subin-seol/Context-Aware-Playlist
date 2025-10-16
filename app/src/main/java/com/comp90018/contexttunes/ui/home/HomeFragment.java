@@ -41,6 +41,8 @@ import com.comp90018.contexttunes.data.viewModel.ImageViewModel;
 import com.comp90018.contexttunes.data.api.SpotifyAPI;
 import com.comp90018.contexttunes.domain.SpotifyPlaylist;
 import com.comp90018.contexttunes.utils.PermissionManager;
+import com.comp90018.contexttunes.utils.PlaylistOpener;
+import com.comp90018.contexttunes.utils.SavedPlaylistsManager;
 import com.comp90018.contexttunes.utils.SettingsManager;
 import com.google.android.libraries.places.api.model.Place;
 import com.comp90018.contexttunes.services.SpeedSensorService;
@@ -64,9 +66,6 @@ public class HomeFragment extends Fragment {
 
     private List<SpotifyPlaylist> spotifyPlaylists = new ArrayList<>();
     private boolean playlistsGenerated = false;
-
-    private Recommendation currentRecommendation = null;
-    private List<Recommendation> currentRecommendations = new ArrayList<>();
     private boolean recommendationsGenerated = false;
 
     // Why are we asking for location permission right now?
@@ -272,21 +271,7 @@ public class HomeFragment extends Fragment {
 
             Recommendation rec = RuleEngine.getRecommendation(ctx);
             binding.welcomeSubtitle.setText(rec.reason);
-            currentRecommendation = rec;
         }
-    }
-
-    private void generateRecommendations() {
-        String timeOfDay = RuleEngine.getCurrentTimeOfDay();
-        String activity  = "still";
-        Context ctx = new Context(currentLightBucket, timeOfDay, activity, currentWeather);
-
-        // Get multiple recommendations
-        currentRecommendations = RuleEngine.getMultipleRecommendations(ctx);
-        recommendationsGenerated = true;
-
-        // Update UI to show generated state
-        showGeneratedState();
     }
 
     private void showGeneratedState() {
@@ -315,6 +300,7 @@ public class HomeFragment extends Fragment {
         // Hide "after generation" elements
         binding.currentMoodCard.setVisibility(View.GONE);
         binding.playlistSuggestionsSection.setVisibility(View.GONE);
+        binding.btnRegenerate.setVisibility(View.GONE);
 
         recommendationsGenerated = false;
     }
@@ -364,6 +350,14 @@ public class HomeFragment extends Fragment {
         chip.setClickable(false);
         chip.setChipCornerRadius(24f);
         binding.contextTagsGroup.addView(chip);
+    }
+
+    private void updateSaveButtonIcon(com.google.android.material.button.MaterialButton btnSave, boolean isSaved) {
+        if (isSaved) {
+            btnSave.setIconResource(com.comp90018.contexttunes.R.drawable.ic_saved);
+        } else {
+            btnSave.setIconResource(com.comp90018.contexttunes.R.drawable.ic_unsaved);
+        }
     }
 
     // ===================== PLACES =====================
@@ -509,6 +503,7 @@ public class HomeFragment extends Fragment {
                 return;
             }
 
+            // Granted → resume original intent
             if (pending == Pending.WEATHER) {
                 fetchWeatherData();
             } else if (pending == Pending.PLACES) {
@@ -624,6 +619,8 @@ public class HomeFragment extends Fragment {
         Log.d(TAG, "Populating " + spotifyPlaylists.size() + " playlist cards");
         binding.playlistCardsContainer.removeAllViews();
 
+        SavedPlaylistsManager saved = new SavedPlaylistsManager(requireContext());
+
         for (SpotifyPlaylist playlist : spotifyPlaylists) {
             View card = getLayoutInflater().inflate(
                     R.layout.item_playlist_card,
@@ -633,8 +630,10 @@ public class HomeFragment extends Fragment {
 
             ImageView playlistImage = card.findViewById(R.id.playlistImage);
             TextView playlistName = card.findViewById(R.id.playlistName);
-            TextView playlistReason = card.findViewById(R.id.playlistReason);
+            TextView playlistMeta = card.findViewById(R.id.playlistMeta);
             com.google.android.material.button.MaterialButton btnPlay = card.findViewById(R.id.btnPlay);
+            com.google.android.material.button.MaterialButton btnSave =
+                    card.findViewById(R.id.btnSave); // bookmark toggle
 
             if (playlist.imageUrl != null && !playlist.imageUrl.isEmpty()) {
                 Glide.with(requireContext())
@@ -643,27 +642,29 @@ public class HomeFragment extends Fragment {
             }
 
             playlistName.setText(playlist.name);
-            playlistReason.setText(playlist.ownerName + " • " + playlist.totalTracks + " tracks");
+            playlistMeta.setText(playlist.ownerName + " • " + playlist.totalTracks + " tracks");
 
             btnPlay.setOnClickListener(v -> {
                 Log.d(TAG, "Opening playlist: " + playlist.externalUrl);
-                openSpotifyPlaylist(playlist.externalUrl);
+                PlaylistOpener.openPlaylist(requireContext(), playlist);
+            });
+
+            // Initial saved state & icon
+            boolean isSaved = saved.isSpotifyPlaylistSaved(playlist);
+            updateSaveButtonIcon(btnSave, isSaved);
+            btnSave.setOnClickListener(v -> {
+                boolean currentlySaved = saved.isSpotifyPlaylistSaved(playlist);
+                if (currentlySaved) {
+                    saved.unsaveSpotifyPlaylist(playlist);
+                    Toast.makeText(requireContext(), "Playlist removed from saved", Toast.LENGTH_SHORT).show();
+                } else {
+                    saved.saveSpotifyPlaylist(playlist);
+                    Toast.makeText(requireContext(), "Playlist saved", Toast.LENGTH_SHORT).show();
+                }
+                updateSaveButtonIcon(btnSave, !currentlySaved);
             });
 
             binding.playlistCardsContainer.addView(card);
-        }
-    }
-
-    private void openSpotifyPlaylist(String url) {
-        if (url == null || url.isEmpty()) {
-            Toast.makeText(requireContext(), "Playlist URL not available", Toast.LENGTH_SHORT).show();
-            return;
-        }
-        try {
-            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
-            startActivity(intent);
-        } catch (Exception e) {
-            Toast.makeText(requireContext(), "Cannot open link", Toast.LENGTH_SHORT).show();
         }
     }
 
