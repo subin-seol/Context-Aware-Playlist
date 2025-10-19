@@ -1,8 +1,10 @@
 package com.comp90018.contexttunes.ui.home;
 
+import android.content.BroadcastReceiver;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.location.Location;
-import android.net.Uri;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.LayoutInflater;
@@ -11,9 +13,6 @@ import android.view.ViewGroup;
 import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
-import android.content.BroadcastReceiver;
-import android.content.Intent;
-import android.content.IntentFilter;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -27,9 +26,12 @@ import com.comp90018.contexttunes.BuildConfig;
 import com.comp90018.contexttunes.MainActivity;
 import com.comp90018.contexttunes.R;
 import com.comp90018.contexttunes.data.api.GooglePlacesAPI;
+import com.comp90018.contexttunes.data.api.SpotifyAPI;
 import com.comp90018.contexttunes.data.sensors.LightSensor;
 import com.comp90018.contexttunes.data.sensors.LightSensor.LightBucket;
 import com.comp90018.contexttunes.data.sensors.LocationSensor;
+import com.comp90018.contexttunes.data.viewModel.HomeStateViewModel;
+import com.comp90018.contexttunes.data.viewModel.ImageViewModel;
 import com.comp90018.contexttunes.data.weather.MockWeatherService;
 import com.comp90018.contexttunes.data.weather.WeatherService;
 import com.comp90018.contexttunes.data.weather.WeatherService.WeatherState;
@@ -37,16 +39,14 @@ import com.comp90018.contexttunes.databinding.FragmentHomeBinding;
 import com.comp90018.contexttunes.domain.Context;
 import com.comp90018.contexttunes.domain.Recommendation;
 import com.comp90018.contexttunes.domain.RuleEngine;
-import com.comp90018.contexttunes.data.viewModel.ImageViewModel;
-import com.comp90018.contexttunes.data.api.SpotifyAPI;
 import com.comp90018.contexttunes.domain.SpotifyPlaylist;
+import com.comp90018.contexttunes.services.SpeedSensorService;
+import com.comp90018.contexttunes.utils.AppEvents;
 import com.comp90018.contexttunes.utils.PermissionManager;
 import com.comp90018.contexttunes.utils.PlaylistOpener;
 import com.comp90018.contexttunes.utils.SavedPlaylistsManager;
 import com.comp90018.contexttunes.utils.SettingsManager;
 import com.google.android.libraries.places.api.model.Place;
-import com.comp90018.contexttunes.services.SpeedSensorService;
-import com.comp90018.contexttunes.utils.AppEvents;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -85,6 +85,8 @@ public class HomeFragment extends Fragment {
     // keep the last activity label to feed into RuleEngine after the window
     private String lastActivityLabel = "still";
 
+    private HomeStateViewModel homeStateViewModel;
+
 
     @Nullable
     @Override
@@ -115,6 +117,27 @@ public class HomeFragment extends Fragment {
 
         // Ask once so foreground notification can show on Android 13+
         ensureNotificationPermissionIfNeeded();
+
+        // initialise view model
+        homeStateViewModel = new ViewModelProvider(requireActivity()).get(HomeStateViewModel.class);
+        // Restore playlists when they change
+        homeStateViewModel.getPlaylists().observe(getViewLifecycleOwner(), playlists -> {
+            if (playlists != null) {
+                this.spotifyPlaylists = playlists;
+                // Update UI whenever playlists change
+                updateUIState();
+            }
+        });
+
+        // Restore UI state based on whether recommendations were generated
+        homeStateViewModel.getRecommendationsGenerated().observe(getViewLifecycleOwner(), isGenerated -> {
+            if (isGenerated != null) {
+                this.playlistsGenerated = isGenerated;
+                this.recommendationsGenerated = isGenerated;
+                // Update UI whenever generation state changes
+                updateUIState();
+            }
+        });
 
         // ---- LIGHT SENSOR (respect Settings) ----
         if (settingsManager.isLightEnabled()) {
@@ -278,7 +301,13 @@ public class HomeFragment extends Fragment {
         if (binding == null) return;
 
         // Hide "Create My Vibe" card
+        binding.welcomeCard.setVisibility(View.GONE);
         binding.createVibeCard.setVisibility(View.GONE);
+        binding.welcomeSubtitle.setVisibility(View.GONE);
+        binding.statsRow.setVisibility(View.GONE);
+        binding.recentTitle.setVisibility(View.GONE);
+        binding.recentItem.setVisibility(View.GONE);
+        binding.btnFetchPlaces.setVisibility(View.GONE);
 
         // Show "Current Mood" card
         binding.currentMoodCard.setVisibility(View.VISIBLE);
@@ -466,6 +495,12 @@ public class HomeFragment extends Fragment {
         }
     }
 
+    // ===== Playlist page for generated state =======
+    private void onPlaylistsGenerated(List<SpotifyPlaylist> playlists) {
+        homeStateViewModel.setPlaylists(playlists);
+        homeStateViewModel.setRecommendationsGenerated(true);
+        showGeneratedState();
+    }
 
     // ===================== PERMISSION RESULT =====================
 
@@ -551,6 +586,9 @@ public class HomeFragment extends Fragment {
 
                 requireActivity().runOnUiThread(() -> {
                     spotifyPlaylists = playlists;
+                    homeStateViewModel.setPlaylists(playlists);
+                    homeStateViewModel.setRecommendationsGenerated(true);
+
                     playlistsGenerated = true;
 
                     binding.loadingContainer.setVisibility(View.GONE);
@@ -701,5 +739,18 @@ public class HomeFragment extends Fragment {
         }
         binding = null;
         super.onDestroyView();
+    }
+
+    // ===== CENTRALISED UI STATE ======
+    private void updateUIState() {
+        if (binding == null) return;
+
+        // If we have generated playlists, show the "after generation" state
+        if (playlistsGenerated && !spotifyPlaylists.isEmpty()) {
+            showGeneratedState();
+        } else {
+            // Otherwise show the "before generation" state
+            showBeforeGenerationState();
+        }
     }
 }
