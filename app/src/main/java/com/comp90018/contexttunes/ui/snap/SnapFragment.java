@@ -1,6 +1,8 @@
 package com.comp90018.contexttunes.ui.snap;
 
+import android.app.Activity;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.net.Uri;
 import android.os.Bundle;
@@ -8,6 +10,7 @@ import android.provider.MediaStore;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.Toast;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
@@ -18,13 +21,17 @@ import androidx.lifecycle.ViewModelProvider;
 
 import com.comp90018.contexttunes.MainActivity;
 import com.comp90018.contexttunes.data.sensors.CameraSensor;
+import com.comp90018.contexttunes.data.viewModel.ImageViewModel;  
 import com.comp90018.contexttunes.databinding.FragmentSnapBinding;
-import com.comp90018.contexttunes.ui.viewModel.SharedCameraViewModel;
+import com.comp90018.contexttunes.services.ImageAnalyser;          
+import com.comp90018.contexttunes.utils.PermissionManager;          
+import com.comp90018.contexttunes.utils.SettingsManager;
 
 import java.io.IOException;
 
 public class SnapFragment extends Fragment {
-
+    private enum Pending { NONE, OPEN_CAMERA }
+    private Pending pending = Pending.NONE;
     private FragmentSnapBinding binding;
     private CameraSensor cameraSensor;
     // Activity result launcher for image picking
@@ -45,8 +52,8 @@ public class SnapFragment extends Fragment {
                                 Bitmap bitmap = MediaStore.Images.Media.getBitmap(
                                         requireActivity().getContentResolver(), selectedImageUri);
                                 // Get viewModel instance since it might not be initialized yet
-                                SharedCameraViewModel vm = new ViewModelProvider(requireActivity())
-                                        .get(SharedCameraViewModel.class);
+                                ImageViewModel vm = new ViewModelProvider(requireActivity())
+                                        .get(ImageViewModel.class);
                                 vm.setCapturedImage(bitmap);
                             } catch (IOException e) {
                                 e.printStackTrace();
@@ -71,42 +78,49 @@ public class SnapFragment extends Fragment {
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
 
-        SharedCameraViewModel viewModel = new ViewModelProvider(requireActivity())
-                .get(SharedCameraViewModel.class);
-
-        cameraSensor = new CameraSensor(requireContext(), binding.cameraPreview, getViewLifecycleOwner());
-
-        // Always hide nav bar when in snap fragment
-        ((MainActivity) requireActivity()).setBottomNavVisibility(false);
-
-        // Determine initial UI state based on existing captured image
-        Bitmap existingBitmap = viewModel.getCapturedImage().getValue();
-        if (existingBitmap != null) {
-            // Post-capture UI
-            showCapturedUI(existingBitmap);
-        } else {
-            // Camera preview UI
-            showCameraUI();
+        SettingsManager settingsManager = new SettingsManager(requireContext());
+        if (!settingsManager.isCameraEnabled()) {
+            view.post(() -> {
+                Toast.makeText(requireContext(),
+                        "Camera is disabled in settings", Toast.LENGTH_LONG).show();
+                ((MainActivity) requireActivity()).goToHomeTab();
+            });
+            return;
         }
 
-        // Observe captured image changes
+        if (!PermissionManager.hasCameraPermission(requireContext())) {
+            pending = Pending.OPEN_CAMERA;
+            PermissionManager.requestCamera(this);
+            // we'll return; on grant we’ll continue setup in onRequestPermissionsResult
+            return;
+        }
+
+        initCameraUi();
+    }
+
+    private void initCameraUi() {
+        ImageViewModel viewModel = new ViewModelProvider(requireActivity())
+                .get(ImageViewModel.class);
+
+        cameraSensor = new CameraSensor(requireContext(), binding.cameraPreview, getViewLifecycleOwner());
+        ((MainActivity) requireActivity()).setBottomNavVisibility(false);
+
+        Bitmap existingBitmap = viewModel.getCapturedImage().getValue();
+        if (existingBitmap != null) showCapturedUI(existingBitmap);
+        else showCameraUI();
+
         viewModel.getCapturedImage().observe(getViewLifecycleOwner(), bitmap -> {
-            if (bitmap != null) {
-                // Post-capture UI
-                showCapturedUI(bitmap);
-            } else {
-                // Camera preview UI
-                showCameraUI();
-            }
+            if (bitmap != null) showCapturedUI(bitmap);
+            else showCameraUI();
         });
 
-        // Capture button
-        binding.btnCapture.setOnClickListener(v -> cameraSensor.takePhoto(capturedBitmap -> {
-            viewModel.setCapturedImage(capturedBitmap);
-            showCapturedUI(capturedBitmap);
-        }));
+        binding.btnCapture.setOnClickListener(v ->
+                cameraSensor.takePhoto(capturedBitmap -> {
+                    viewModel.setCapturedImage(capturedBitmap);
+                    showCapturedUI(capturedBitmap);
+                })
+        );
 
-        // Retake button
         binding.btnRetake.setOnClickListener(v -> {
             viewModel.setCapturedImage(null);
             showCameraUI();
@@ -114,15 +128,16 @@ public class SnapFragment extends Fragment {
 
         // Generate button
         binding.btnGenerate.setOnClickListener(v -> {
+            // TODO: move this to rule engine pipeline when GO button is clicked on homepage
+            ImageAnalyser analyser = new ImageAnalyser(requireContext());
+            analyser.analyzeImage(viewModel);      // analyser spawns its own background thread
             ((MainActivity) requireActivity()).goToHomeTab();
         });
 
-        // Back button
         binding.btnBack.setOnClickListener(v ->
                 ((MainActivity) requireActivity()).goToHomeTab()
         );
 
-        // Add upload button logic (uncomment if you have btnUpload)
         binding.btnUpload.setOnClickListener(v -> {
             Intent intent = new Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
             imagePickerLauncher.launch(intent);
@@ -151,9 +166,35 @@ public class SnapFragment extends Fragment {
     }
 
     @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions,
+                                           @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+
+        if (requestCode == PermissionManager.REQ_CAMERA) {
+            boolean granted = grantResults.length > 0
+                    && grantResults[0] == PackageManager.PERMISSION_GRANTED;
+
+            if (!granted) {
+                Toast.makeText(requireContext(),
+                        "Camera permission needed for this feature", Toast.LENGTH_SHORT).show();
+                ((MainActivity) requireActivity()).goToHomeTab();
+                pending = Pending.NONE;
+                return;
+            }
+
+            if (pending == Pending.OPEN_CAMERA) {
+                pending = Pending.NONE;
+                initCameraUi();
+            }
+        }
+    }
+
+    @Override
     public void onDestroyView() {
         super.onDestroyView();
-        cameraSensor.stopCameraPreview();
+        if (cameraSensor != null) {
+            cameraSensor.stopCameraPreview();
+        }
         ((MainActivity) requireActivity()).setBottomNavVisibility(true);
         binding = null;
     }

@@ -16,18 +16,28 @@ import java.util.List;
 
 public class GooglePlacesAPI {
 
-    private PlacesClient placesClient;
+    private static volatile GooglePlacesAPI INSTANCE;
+    private final PlacesClient placesClient;
 
-    public GooglePlacesAPI(Context context, String apiKey) {
-        if (apiKey == null || apiKey.isEmpty() || apiKey.equals("DEFAULT_API_KEY")) {
-            throw new IllegalArgumentException("No valid API key provided to GooglePlacesAPI");
-        }
-
+    private GooglePlacesAPI(Context appCtx) {
+        // Places is initialized in Application; be defensive in case of tests
         if (!Places.isInitialized()) {
-            Places.initializeWithNewPlacesApiEnabled(context, apiKey);
+            // Safe guard for test environments; app initializes in Application.onCreate
+            Places.initializeWithNewPlacesApiEnabled(appCtx, com.comp90018.contexttunes.BuildConfig.PLACES_API_KEY);
         }
-        this.placesClient = Places.createClient(context);
-        Log.d("GooglePlacesAPI", "Places API initialized");
+        this.placesClient = Places.createClient(appCtx);
+        Log.d("GooglePlacesAPI", "Places client ready");
+    }
+
+    public static GooglePlacesAPI getInstance(Context ctx) {
+        if (INSTANCE == null) {
+            synchronized (GooglePlacesAPI.class) {
+                if (INSTANCE == null) {
+                    INSTANCE = new GooglePlacesAPI(ctx.getApplicationContext());
+                }
+            }
+        }
+        return INSTANCE;
     }
 
 
@@ -52,7 +62,7 @@ public class GooglePlacesAPI {
         // Fields you want to retrieve from each place
         final List<Place.Field> placeFields = Arrays.asList(
                 Place.Field.ID,
-                Place.Field.NAME,
+                Place.Field.DISPLAY_NAME,
                 Place.Field.PRIMARY_TYPE,
                 Place.Field.TYPES,
                 Place.Field.LAT_LNG

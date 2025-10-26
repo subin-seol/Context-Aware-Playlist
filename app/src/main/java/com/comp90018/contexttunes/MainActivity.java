@@ -1,6 +1,7 @@
 package com.comp90018.contexttunes;
 
 import android.os.Bundle;
+import android.util.Log;
 import android.view.View;
 
 import androidx.activity.EdgeToEdge;
@@ -9,30 +10,24 @@ import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.fragment.app.Fragment;
+import androidx.lifecycle.MutableLiveData;
 
+import com.comp90018.contexttunes.data.sensors.LightSensor;
+import com.comp90018.contexttunes.data.sensors.LightSensor.LightBucket;
 import com.comp90018.contexttunes.databinding.ActivityMainBinding;
 import com.comp90018.contexttunes.ui.home.HomeFragment;
 import com.comp90018.contexttunes.ui.playlist.PlaylistFragment;
 import com.comp90018.contexttunes.ui.snap.SnapFragment;
 
-// imports for Activity Result API and permissions/service
-import android.Manifest;
-import android.content.Intent;
-import android.content.pm.PackageManager;
-import android.os.Build;
-import androidx.activity.result.ActivityResultLauncher;
-import androidx.activity.result.contract.ActivityResultContracts;
-import androidx.core.content.ContextCompat;
-import com.comp90018.contexttunes.services.SpeedSensorService;
-import java.util.ArrayList;
-import java.util.List;
-
 public class MainActivity extends AppCompatActivity {
 
     private ActivityMainBinding binding;
 
-    // Activity Result API launcher for multi-permission request
-    private ActivityResultLauncher<String[]> permissionLauncher;
+    // Light sensor instance
+    private LightSensor lightSensor;
+    private final MutableLiveData<LightBucket> lightBucketLive = new MutableLiveData<>(LightBucket.UNKNOWN);
+    //public LiveData<LightBucket> getLightBucketLive() { return lightBucketLive; }
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -77,7 +72,7 @@ public class MainActivity extends AppCompatActivity {
                 selectedFragment = new PlaylistFragment();
             } else if (id == R.id.nav_settings){
                 // Go to settings
-//                selectedFragment =
+                selectedFragment = new com.comp90018.contexttunes.ui.settings.SettingsFragment();
             }
 
             if (selectedFragment != null){
@@ -88,19 +83,21 @@ public class MainActivity extends AppCompatActivity {
             return false;
         });
 
-        // register Activity Result launcher to handle permission results
-        permissionLauncher = registerForActivityResult(
-                new ActivityResultContracts.RequestMultiplePermissions(),
-                result -> {
-                    // After user action, check essentials again; start service if granted
-                    if (hasEssentialPermissions()) {
-                        startSpeedServiceIfNotRunning();
-                    }
-                }
-        );
+        // Initialise LightSensor
+        lightSensor = new LightSensor(this, bucket -> {
+            Log.d("LightSensor", "Current light bucket = " + bucket);
+            lightBucketLive.postValue(bucket);
+        });
+    }
 
-        // kick off permission flow or start service if already granted
-        ensurePermissionsAndMaybeStartService();
+    @Override protected void onResume() {
+        super.onResume();
+        if (lightSensor != null) lightSensor.start();
+    }
+
+    @Override protected void onPause() {
+        if (lightSensor != null) lightSensor.stop();
+        super.onPause();
     }
 
     public void setBottomNavVisibility(boolean visible) {
@@ -114,50 +111,15 @@ public class MainActivity extends AppCompatActivity {
         binding.bottomNav.setSelectedItemId(R.id.nav_home);
     }
 
-    // ===== permissions + service helpers =====
-
-    // Build the permission array to request (includes optional POST_NOTIFICATIONS on 33+)
-    private String[] buildPermissionArray() {
-        List<String> perms = new ArrayList<>();
-        perms.add(Manifest.permission.ACCESS_FINE_LOCATION);
-        perms.add(Manifest.permission.ACCESS_COARSE_LOCATION);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            perms.add(Manifest.permission.ACTIVITY_RECOGNITION);
-        }
-        if (Build.VERSION.SDK_INT >= 33) {
-            // foreground service notification visibility
-            perms.add(Manifest.permission.POST_NOTIFICATIONS);
-        }
-        return perms.toArray(new String[0]);
+    public void goToSnapTab() {
+        // This triggers the BottomNavigationView listener and loads HomeFragment
+        binding.bottomNav.setSelectedItemId(R.id.nav_snap);
     }
 
-    // Check essential permissions (location + activity recognition when applicable)
-    private boolean hasEssentialPermissions() {
-        boolean fine = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-                == PackageManager.PERMISSION_GRANTED;
-        boolean coarse = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
-                == PackageManager.PERMISSION_GRANTED;
-        boolean activityOk = true;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            activityOk = ContextCompat.checkSelfPermission(this, Manifest.permission.ACTIVITY_RECOGNITION)
-                    == PackageManager.PERMISSION_GRANTED;
-        }
-        return fine && coarse && activityOk;
-    }
 
-    // If essentials are missing, request them via Activity Result API; else start service
-    private void ensurePermissionsAndMaybeStartService() {
-        if (hasEssentialPermissions()) {
-            startSpeedServiceIfNotRunning();
-        } else {
-            permissionLauncher.launch(buildPermissionArray());
+    public void selectTab(int menuId) {
+        if (binding != null) {
+            binding.bottomNav.setSelectedItemId(menuId);
         }
-    }
-
-    // Start (or keep alive) the foreground SpeedSensorService (idempotent)
-    private void startSpeedServiceIfNotRunning() {
-        Intent i = new Intent(getApplicationContext(), SpeedSensorService.class);
-        ContextCompat.startForegroundService(getApplicationContext(), i);
-        // NOTE: PlaylistFragment will still trigger ACTION_SPEED_SAMPLE_NOW on resume for fresh data
     }
 }

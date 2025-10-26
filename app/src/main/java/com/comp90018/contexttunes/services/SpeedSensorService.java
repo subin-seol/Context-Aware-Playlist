@@ -1,8 +1,12 @@
 package com.comp90018.contexttunes.services;
 
 import android.Manifest;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.hardware.SensorManager;
 import android.location.Location;
 import android.os.Build;
@@ -15,9 +19,11 @@ import android.util.Log;
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresPermission;
 import androidx.core.app.ActivityCompat;
+import androidx.core.app.NotificationCompat;
 import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
 import com.comp90018.contexttunes.BuildConfig;
+import com.comp90018.contexttunes.R;
 import com.comp90018.contexttunes.data.sensors.SpeedSensor;
 import com.comp90018.contexttunes.utils.AppEvents;
 import com.google.android.gms.location.FusedLocationProviderClient;
@@ -30,7 +36,7 @@ import com.google.android.gms.location.Priority;
 import com.google.android.gms.tasks.CancellationTokenSource;
 
 /**
- * Five-second measuring window with clear priority:
+ * 20 second measuring window with clear priority:
  *   1) Prefer step-derived speed (cadence EMA) when step pipeline is alive.
  *   2) Only if steps are NOT alive, fall back to GPS speed (gated & smoothed).
  *
@@ -40,11 +46,12 @@ import com.google.android.gms.tasks.CancellationTokenSource;
  * Emits ACTION_SPEED_UPDATE ~1Hz during the window and once more at the end (EXTRA_IS_FINAL=true).
  */
 public class SpeedSensorService extends Service {
-
-    private static final String TAG = "SpeedSensorService";
+    private static final String TAG   = "SpeedSensorService";
+    private static final String CH_ID = "ctx_speed_channel";
+    private static final int    NOTIF_ID = 42;
 
     // ===== Window / pacing =====
-    private static final long MEASURE_WINDOW_MS = 5_000L;  // fixed window requested by UI
+    private static final long MEASURE_WINDOW_MS = 20_000L;  // 20 seconds for now
     private static final long LOOP_TICK_MS      = 200L;    // internal loop cadence
     private static final long EMIT_PERIOD_MS    = 1_000L;  // throttle broadcasts to ~1Hz
 
@@ -74,6 +81,7 @@ public class SpeedSensorService extends Service {
     private Handler handler;
     private FusedLocationProviderClient fused;
     private LocationCallback gpsCb;
+    private Location lastLoc;
 
     // Step pipeline (cadence + cadence→speed heuristic)
     private SpeedSensor speedSensor;
@@ -97,42 +105,61 @@ public class SpeedSensorService extends Service {
     private long   lastLabelAt = 0L;
     private long   wheelSince  = 0L;
 
-    // GPS previous fix (for delta distance speed when loc.hasSpeed() is absent)
-    private Location lastLoc = null;
-
     @Override public void onCreate() {
         super.onCreate();
         handler = new Handler(Looper.getMainLooper());
         fused   = LocationServices.getFusedLocationProviderClient(this);
 
-        // Start the step pipeline; SpeedSensor internally guards for ACTIVITY_RECOGNITION.
-        speedSensor = new SpeedSensor((SensorManager) getSystemService(SENSOR_SERVICE));
+        // Foreground notification channel + tile
+        createNotifChannelIfNeeded();
+        startForeground(NOTIF_ID, buildNotif("Idle"));
+
+        SensorManager sm = (SensorManager) getSystemService(SENSOR_SERVICE);
+
+        boolean hasAR = androidx.core.content.ContextCompat.checkSelfPermission(
+                this, Manifest.permission.ACTIVITY_RECOGNITION
+        ) == PackageManager.PERMISSION_GRANTED;
+
+        boolean hwPresent =
+                sm.getDefaultSensor(android.hardware.Sensor.TYPE_STEP_DETECTOR) != null
+                        || sm.getDefaultSensor(android.hardware.Sensor.TYPE_STEP_COUNTER)  != null;
+
+        // Only allow accelerometer fallback if we can't use HW steps (no AR perm OR no HW)
+        boolean allowAccelFallback = !(hasAR && hwPresent);
+
+        speedSensor = new com.comp90018.contexttunes.data.sensors.SpeedSensor(sm, allowAccelFallback);
         speedSensor.start();
 
+        if (BuildConfig.DEBUG) {
+            Log.d(TAG, "stepsPolicy: AR=" + hasAR
+                    + " hwPresent=" + hwPresent
+                    + " allowAccelFallback=" + allowAccelFallback);
+        }
+
+        // Start the control loop
         handler.post(loop);
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null && AppEvents.ACTION_SPEED_SAMPLE_NOW.equals(intent.getAction())) {
-            // Arm a fresh 5s window
-            windowActive   = true;
-            windowEndMono  = SystemClock.elapsedRealtime() + MEASURE_WINDOW_MS;
-
-            // Reset state for this window
-            seq = 0;
-            lastEmitWall = 0;
-            lastLabel = "-";
-            lastLabelAt = 0L;
-            wheelSince = 0L;
-
-            stepSpeedKmh = 0f;
-            gpsSpeedKmh  = 0f;
-            gpsGood      = false;
-            lastLoc      = null;
-
-            if (BuildConfig.DEBUG) Log.d(TAG, "Measuring window started");
+            armNewWindow();  // the method that resets state and starts the 20s window
         }
-        return START_NOT_STICKY;
+        return START_STICKY;
+    }
+
+    private void armNewWindow() {
+        // Arm a fresh 20s window
+        windowActive  = true;
+        windowEndMono = SystemClock.elapsedRealtime() + MEASURE_WINDOW_MS;
+
+        seq = 0; lastEmitWall = 0;
+        lastLabel = "-"; lastLabelAt = 0L; wheelSince = 0L;
+
+        stepSpeedKmh = 0f; gpsSpeedKmh = 0f; gpsGood = false; lastLoc = null;
+
+        if (speedSensor != null) speedSensor.resetDebugCounts();
+        updateNotif("Measuring 20s…");
+        if (BuildConfig.DEBUG) Log.d(TAG, "Measuring window started");
     }
 
     private final Runnable loop = new Runnable() {
@@ -150,6 +177,7 @@ public class SpeedSensorService extends Service {
             if (nowMono >= windowEndMono) {
                 float chosen = chooseSpeedKmh();
                 String label = classifyBySpeed(chosen, stepsAlive, nowWall);
+
                 emit(label,
                         chosen,
                         stepsAlive ? (float) speedSensor.pollCadenceBPM() : Float.NaN,
@@ -158,6 +186,11 @@ public class SpeedSensorService extends Service {
                         nowWall);
                 windowActive = false;
                 stopGpsIfAny();
+
+                // Kill the ongoing notification and this service instance
+                stopForeground(true);
+                stopSelf();
+
                 if (BuildConfig.DEBUG) Log.d(TAG, "Measuring window ended");
                 handler.postDelayed(this, LOOP_TICK_MS);
                 return;
@@ -170,17 +203,14 @@ public class SpeedSensorService extends Service {
                 stopGpsIfAny(); // not needed while steps are alive
                 stepSpeedKmh = (float) SpeedSensor.estimateSpeedFromCadenceEma(spm, stepSpeedKmh);
             } else {
-                // 2) GPS FALLBACK: only when steps are not alive
-                if (ActivityCompat.checkSelfPermission(
-                        SpeedSensorService.this, Manifest.permission.ACCESS_FINE_LOCATION) ==
-                        android.content.pm.PackageManager.PERMISSION_GRANTED
-                        || ActivityCompat.checkSelfPermission(
-                        SpeedSensorService.this, Manifest.permission.ACCESS_COARSE_LOCATION) ==
-                        android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                // 2) GPS FALLBACK: only when steps are not alive and we have location permission
+                if (ActivityCompat.checkSelfPermission(SpeedSensorService.this, Manifest.permission.ACCESS_FINE_LOCATION)
+                        == PackageManager.PERMISSION_GRANTED
+                        || ActivityCompat.checkSelfPermission(SpeedSensorService.this, Manifest.permission.ACCESS_COARSE_LOCATION)
+                        == PackageManager.PERMISSION_GRANTED) {
                     // Permissions present → (re)start GPS if needed
                     startGpsIfNeeded();
                 } else {
-                    // No location permission → ensure GPS is off
                     stopGpsIfAny();
                 }
             }
@@ -188,6 +218,10 @@ public class SpeedSensorService extends Service {
             // Choose speed and classify label (label depends ONLY on speed)
             float  chosen = chooseSpeedKmh();
             String label  = classifyBySpeed(chosen, stepsAlive, nowWall);
+
+            Log.d(TAG, "src=" + sourceOf(chosen) + " detail=" + speedSensor.debugSource()
+                    + " spm=" + (stepsAlive ? spm : -1) + " kmh=" + chosen);
+
             maybeEmit(label,
                     chosen,
                     stepsAlive ? (float) spm : Float.NaN,
@@ -357,15 +391,14 @@ public class SpeedSensorService extends Service {
         seq++;
 
         Intent i = new Intent(AppEvents.ACTION_SPEED_UPDATE);
-        i.putExtra(AppEvents.EXTRA_SPEED_KMH, speedKmh);
+        i.putExtra(AppEvents.EXTRA_SPEED_KMH,   speedKmh);
         i.putExtra(AppEvents.EXTRA_CADENCE_SPM, cadenceSpm == null ? Float.NaN : cadenceSpm);
-        i.putExtra(AppEvents.EXTRA_ACTIVITY, label == null ? "-" : label);
-        i.putExtra(AppEvents.EXTRA_SOURCE, source);
-        i.putExtra(AppEvents.EXTRA_SEQ, seq);
-        i.putExtra(AppEvents.EXTRA_IS_FINAL, isFinal);
+        i.putExtra(AppEvents.EXTRA_ACTIVITY,    label == null ? "-" : label);
+        i.putExtra(AppEvents.EXTRA_SOURCE,      source);
+        i.putExtra(AppEvents.EXTRA_SEQ,         seq);
+        i.putExtra(AppEvents.EXTRA_IS_FINAL,    isFinal);
 
         LocalBroadcastManager.getInstance(this).sendBroadcast(i);
-        sendBroadcast(i);
 
         if (BuildConfig.DEBUG) {
             Log.d(TAG, (isFinal ? "emit[FINAL]" : "emit")
@@ -375,6 +408,39 @@ public class SpeedSensorService extends Service {
                     + " spm=" + (cadenceSpm == null ? "NaN" : String.format("%.0f", cadenceSpm))
                     + " src=" + source);
         }
+    }
+
+    // ===== Foreground notification helpers =====
+    private void createNotifChannelIfNeeded() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel ch = new NotificationChannel(
+                    CH_ID, "ContextTunes Speed", NotificationManager.IMPORTANCE_LOW);
+            ch.setDescription("Speed sensing");
+            NotificationManager nm = getSystemService(NotificationManager.class);
+            nm.createNotificationChannel(ch);
+        }
+    }
+
+    private Notification buildNotif(String subtitle) {
+        Intent open = new Intent(this, com.comp90018.contexttunes.MainActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        android.app.PendingIntent pi = android.app.PendingIntent.getActivity(
+                this, 0, open, android.app.PendingIntent.FLAG_IMMUTABLE);
+
+        return new NotificationCompat.Builder(this, CH_ID)
+                .setSmallIcon(R.drawable.ic_stat_speed)
+                .setContentTitle("ContextTunes")
+                .setContentText("Speed sensing • " + subtitle)
+                .setOngoing(true)
+                .setContentIntent(pi)
+                .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+                .build();
+    }
+
+    private void updateNotif(String subtitle) {
+        Notification n = buildNotif(subtitle);
+        NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        nm.notify(NOTIF_ID, n);
     }
 
     @Nullable @Override public IBinder onBind(Intent intent) { return null; }

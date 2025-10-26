@@ -4,6 +4,8 @@ import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
+import android.util.Log;
+
 
 import androidx.annotation.Nullable;
 
@@ -12,8 +14,7 @@ import androidx.annotation.Nullable;
  *
  * Priority:
  *  1) TYPE_STEP_DETECTOR / TYPE_STEP_COUNTER (may require ACTIVITY_RECOGNITION on Android 10+).
- *  2) Accelerometer fallback with gravity removal + peak picking when step sensors are absent,
- *     permission is denied, or vendor blocks events.
+ *  2) Accelerometer fallback (very conservative) ONLY if no hardware step sensors.
  *
  * API:
  *  - start()/stop()
@@ -36,6 +37,13 @@ public class SpeedSensor implements SensorEventListener {
     @Nullable private final Sensor stepCounter;
     @Nullable private final Sensor accelerometer;
 
+    /** If true, we register accel and allow fallback steps; otherwise accel is unused. */
+    private final boolean useAccelFallback;
+    // cadence state
+    private volatile long lastHwStepAt   = 0L;
+    private volatile long lastAccelStepAt= 0L;
+    private int lastStepCounter = -1;
+
     private boolean haveCounterBase = false;
     private long    counterBase     = 0;
     private long    lastStepAtMs    = 0;
@@ -45,15 +53,37 @@ public class SpeedSensor implements SensorEventListener {
     private double  lpMag           = 0.0;
     private long    lastPeakAt      = 0L;
 
-    public SpeedSensor(SensorManager sm) {
+    // debug counters
+    private long stepDetectorCount = 0;
+    private long accelPeakCount = 0;
+
+    public SpeedSensor(SensorManager sm, boolean useAccelFallback) {
         this.sm = sm;
+        this.useAccelFallback = useAccelFallback;
         this.stepDetector  = sm.getDefaultSensor(Sensor.TYPE_STEP_DETECTOR);
         this.stepCounter   = sm.getDefaultSensor(Sensor.TYPE_STEP_COUNTER);
         this.accelerometer = sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
     }
 
+    /** Hardware step sensors present? */
+    public boolean hasHardwareSteps() {
+        return stepDetector != null || stepCounter != null;
+    }
+
+    /** Human-readable source for logs. */
+    public String debugSource() {
+        if (stepDetectorCount > 0) return "stepSensor";
+        if (useAccelFallback && accelPeakCount > 0) return "accelerometer";
+        return "none";
+    }
+
+    public void resetDebugCounts() { stepDetectorCount = 0; accelPeakCount = 0; }
+
     /** Always call start(); we guard runtime-permission failures via try/catch. */
     public void start() {
+        Log.d("SpeedSensor", "stepDetector=" + (stepDetector!=null)
+                + " stepCounter=" + (stepCounter!=null)
+                + " accelerometer=" + (accelerometer!=null));
         try { if (stepDetector != null) sm.registerListener(this, stepDetector, SensorManager.SENSOR_DELAY_NORMAL); }
         catch (SecurityException ignore) {}
         try { if (stepCounter != null)  sm.registerListener(this, stepCounter,  SensorManager.SENSOR_DELAY_NORMAL); }
@@ -68,12 +98,22 @@ public class SpeedSensor implements SensorEventListener {
         lastStepAtMs = 0L;
         lastPeakAt = 0L;
         lpMag = 0.0;
+        lastHwStepAt = 0L;
+        lastAccelStepAt = 0L;
+        lastStepCounter = -1;
     }
 
     public void stop() { sm.unregisterListener(this); }
 
+    /** Alive if a HW step is recent; if fallback is enabled, accel steps can also keep it alive. */
     public boolean isCadenceAlive() {
-        return (System.currentTimeMillis() - lastStepAtMs) <= ALIVE_MS;
+        long now = System.currentTimeMillis();
+        boolean hwAlive = (now - lastHwStepAt) <= ALIVE_MS;
+        if (useAccelFallback) {
+            boolean accelAlive = (now - lastAccelStepAt) <= ALIVE_MS;
+            return hwAlive || accelAlive;
+        }
+        return hwAlive;
     }
 
     public int pollCadenceBPM() {
@@ -119,33 +159,44 @@ public class SpeedSensor implements SensorEventListener {
     @Override public void onSensorChanged(SensorEvent e) {
         long now = System.currentTimeMillis();
 
-        if (e.sensor.getType() == Sensor.TYPE_STEP_DETECTOR) {
-            if (e.values != null && e.values.length > 0 && e.values[0] > 0.5f) onStep(now);
-            return;
-        }
-        if (e.sensor.getType() == Sensor.TYPE_STEP_COUNTER) {
-            long total = (long) e.values[0];
-            if (!haveCounterBase) {
-                counterBase = total;
-                haveCounterBase = true;
-            } else {
-                long inc = total - counterBase;
-                if (inc > 0) {
-                    counterBase = total;
+        switch (e.sensor.getType()) {
+            case Sensor.TYPE_STEP_DETECTOR:
+                if (e.values != null && e.values.length > 0 && e.values[0] > 0.5f) {
+                    stepDetectorCount++;
+                    lastHwStepAt = now;
                     onStep(now);
                 }
+                return;
+
+            case Sensor.TYPE_STEP_COUNTER: {
+                long total = (long) e.values[0];
+                if (!haveCounterBase) {
+                    counterBase = total;
+                    haveCounterBase = true;
+                } else {
+                    long inc = total - counterBase;
+                    if (inc > 0) {
+                        counterBase = total;
+                        lastHwStepAt = now;
+                        onStep(now);
+                    }
+                }
+                return;
             }
-            return;
-        }
-        if (e.sensor.getType() == Sensor.TYPE_ACCELEROMETER) {
-            final float ax = e.values[0], ay = e.values[1], az = e.values[2];
-            final double mag = Math.sqrt(ax * ax + ay * ay + az * az) / SensorManager.GRAVITY_EARTH; // g
-            lpMag = LP_ALPHA * lpMag + (1.0 - LP_ALPHA) * mag;
-            final double high = mag - lpMag; // gravity removed
-            if (high > PEAK_THRESHOLD_G && (now - lastPeakAt) > PEAK_REFRACTORY_MS) {
-                lastPeakAt = now;
-                onStep(now);
-            }
+
+            case Sensor.TYPE_ACCELEROMETER:
+                if (!useAccelFallback) return;
+                final float ax = e.values[0], ay = e.values[1], az = e.values[2];
+                final double g = Math.sqrt(ax * ax + ay * ay + az * az) / SensorManager.GRAVITY_EARTH;
+                lpMag = LP_ALPHA * lpMag + (1.0 - LP_ALPHA) * g;
+                final double high = g - lpMag; // gravity removed
+                if (high > PEAK_THRESHOLD_G && (now - lastPeakAt) > PEAK_REFRACTORY_MS) {
+                    accelPeakCount++;
+                    lastPeakAt = now;
+                    lastAccelStepAt = now;
+                    onStep(now);
+                }
+                return;
         }
     }
 

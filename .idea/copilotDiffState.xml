@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="CopilotDiffPersistence">
+    <option name="pendingDiffs">
+      <map>
+        <entry key="$PROJECT_DIR$/app/src/main/java/com/comp90018/contexttunes/domain/Context.java">
+          <value>
+            <PendingDiffInfo>
+              <option name="filePath" value="$PROJECT_DIR$/app/src/main/java/com/comp90018/contexttunes/domain/Context.java" />
+              <option name="originalContent" value="package com.comp90018.contexttunes.domain;&#10;&#10;import com.comp90018.contexttunes.data.sensors.LightSensor.LightBucket;&#10;// timeofday is: &quot;morning&quot;, &quot;afternoon&quot;, &quot;evening&quot;, &quot;night&quot;&#10;// activity is something like: &quot;still&quot;, &quot;walking&quot;, &quot;running&quot; (mock for now)&#10;public class Context {&#10;    public final LightBucket lightLevel;&#10;    public final String timeOfDay;&#10;    public final String activity;&#10;&#10;    public Context(LightBucket lightLevel, String timeOfDay, String activity) {&#10;        this.lightLevel = lightLevel;&#10;        this.timeOfDay = timeOfDay;&#10;        this.activity = activity;&#10;    }&#10;}" />
+              <option name="updatedContent" value="package com.comp90018.contexttunes.domain;&#10;&#10;import com.comp90018.contexttunes.data.sensors.LightSensor.LightBucket;&#10;import com.comp90018.contexttunes.data.weather.WeatherService.WeatherState;&#10;&#10;// timeofday is: &quot;morning&quot;, &quot;afternoon&quot;, &quot;evening&quot;, &quot;night&quot;&#10;// activity is something like: &quot;still&quot;, &quot;walking&quot;, &quot;running&quot; (mock for now)&#10;// weather is: SUNNY, CLOUDY, RAINY, UNKNOWN&#10;public class Context {&#10;    public final LightBucket lightLevel;&#10;    public final String timeOfDay;&#10;    public final String activity;&#10;    public final WeatherState weather;&#10;&#10;    public Context(LightBucket lightLevel, String timeOfDay, String activity, WeatherState weather) {&#10;        this.lightLevel = lightLevel;&#10;        this.timeOfDay = timeOfDay;&#10;        this.activity = activity;&#10;        this.weather = weather;&#10;    }&#10;}" />
+            </PendingDiffInfo>
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+</project>

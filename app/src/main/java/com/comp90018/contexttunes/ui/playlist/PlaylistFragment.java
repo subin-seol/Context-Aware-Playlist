@@ -1,141 +1,116 @@
 package com.comp90018.contexttunes.ui.playlist;
 
-import android.content.BroadcastReceiver;
-import android.content.Context;
-import android.content.Intent;
-import android.content.IntentFilter;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.core.content.ContextCompat;
 import androidx.fragment.app.Fragment;
 
+import com.bumptech.glide.Glide;
 import com.comp90018.contexttunes.R;
-import com.comp90018.contexttunes.services.SpeedSensorService;
-import com.comp90018.contexttunes.utils.AppEvents;
+import com.comp90018.contexttunes.domain.SpotifyPlaylist;
+import com.comp90018.contexttunes.utils.PlaylistOpener;
+import com.comp90018.contexttunes.utils.SavedPlaylistsManager;
+import com.google.android.material.button.MaterialButton;
 
-/**
- * Receives speed/cadence/activity frames from SpeedSensorService via AppEvents,
- * caches the latest context, and (optionally) triggers playlist generation.
- *
- * Notes:
- *  - Current AppEvents only guarantees: EXTRA_SPEED_KMH, EXTRA_CADENCE_SPM, EXTRA_ACTIVITY.
- *  - We derive "source" (steps/gps) from whether cadence is present.
- *  - We optionally suggest a target BPM from the activity label.
- */
+import java.util.List;
+
 public class PlaylistFragment extends Fragment {
 
-    // --- Cached context from SpeedSensorService ---
-    private float  lastSpeedKmh   = 0f;
-    @Nullable private Float  lastCadenceSpm = null;   // steps/min (NaN → null)
-    @Nullable private String lastActivity   = null;   // "-", still|walking|running|wheels
-    @Nullable private Integer lastTargetBpm = null;   // derived by suggestTargetBpm(...)
-    @Nullable private String lastSource     = null;   // derived: "steps" if cadence present, else "gps"
-
-    private final BroadcastReceiver speedReceiver = new BroadcastReceiver() {
-        @Override public void onReceive(Context ctx, Intent intent) {
-            if (!AppEvents.ACTION_SPEED_UPDATE.equals(intent.getAction())) return;
-
-            // Guaranteed by AppEvents/Service
-            lastSpeedKmh = intent.getFloatExtra(AppEvents.EXTRA_SPEED_KMH, 0f);
-
-            float spm = intent.getFloatExtra(AppEvents.EXTRA_CADENCE_SPM, Float.NaN);
-            lastCadenceSpm = Float.isNaN(spm) ? null : spm;
-
-            lastActivity = intent.getStringExtra(AppEvents.EXTRA_ACTIVITY);
-            if (lastActivity == null || lastActivity.isEmpty()) lastActivity = "-";
-
-            // Derived fields (since the service no longer sends these extras)
-            lastSource = (lastCadenceSpm != null) ? "steps" : "gps";
-            lastTargetBpm = suggestTargetBpm(lastActivity, lastCadenceSpm, lastSpeedKmh);
-
-            // If you want to refresh UI/VM on every live update, do it here:
-            // viewModel.onSpeedContext(lastSpeedKmh, lastActivity, lastTargetBpm, lastCadenceSpm, lastSource);
-        }
-    };
+    private LinearLayout savedPlaylistsContainer;
+    private ScrollView playlistScrollView;
+    private LinearLayout emptyStateLayout;
+    private SavedPlaylistsManager savedPlaylistsManager;
 
     @Nullable
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater,
                              @Nullable ViewGroup container,
                              @Nullable Bundle savedInstanceState) {
+        // Inflate layout
         return inflater.inflate(R.layout.fragment_playlist, container, false);
     }
 
     @Override
-    public void onStart() {
-        super.onStart();
-        // Receive both local + system broadcasts (service sends both).
-        IntentFilter f = new IntentFilter(AppEvents.ACTION_SPEED_UPDATE);
-        ContextCompat.registerReceiver(
-                requireContext(),
-                speedReceiver,
-                f,
-                ContextCompat.RECEIVER_NOT_EXPORTED
-        );
-    }
+    public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
+        super.onViewCreated(view, savedInstanceState);
 
-    @Override
-    public void onStop() {
-        super.onStop();
-        try {
-            requireContext().unregisterReceiver(speedReceiver);
-        } catch (IllegalArgumentException ignored) {
-            // already unregistered, ignore
-        }
+        savedPlaylistsContainer = view.findViewById(R.id.savedPlaylistsContainer);
+        playlistScrollView = view.findViewById(R.id.playlistScrollView);
+        emptyStateLayout = view.findViewById(R.id.emptyStateLayout);
+
+        savedPlaylistsManager = new SavedPlaylistsManager(requireContext());
+
+        loadSavedPlaylists();
     }
 
     @Override
     public void onResume() {
         super.onResume();
-        // Kick a fresh 5s sampling window to get a recent context.
-        // IMPORTANT: our SpeedSensorService is not a foreground service; use startService().
-        Intent now = new Intent(requireContext().getApplicationContext(), SpeedSensorService.class);
-        now.setAction(AppEvents.ACTION_SPEED_SAMPLE_NOW);
-        requireContext().getApplicationContext().startService(now);
+        // Refresh the playlist display when returning to this tab
+        loadSavedPlaylists();
     }
 
-    // Example hook: call this when you actually build the playlist
-    private void generatePlaylistWithContext() {
-        // Use these: lastSpeedKmh, lastActivity, lastTargetBpm, lastCadenceSpm, lastSource
-    }
+    private void loadSavedPlaylists() {
+        List<SpotifyPlaylist> savedPlaylists = savedPlaylistsManager.getSavedSpotifyPlaylists();
 
-    /**
-     * Very simple BPM suggestion, purely for UX glue. Tune as you like.
-     * If cadence is available, you could lock BPM ~ cadence*2 (common for running)
-     * or near cadence for walking; otherwise pick from label buckets.
-     */
-    @Nullable
-    private Integer suggestTargetBpm(@NonNull String activity,
-                                     @Nullable Float cadenceSpm,
-                                     float speedKmh) {
-        // If we have cadence, give it priority (runner often likes BPM≈cadence or 2x cadence)
-        if (cadenceSpm != null && cadenceSpm > 0) {
-            int bpm = Math.round(cadenceSpm);        // walking: ~100 spm, running: ~160 spm
-            bpm = clamp(bpm, 80, 180);
-            return bpm;
-        }
+        // Clear existing views
+        savedPlaylistsContainer.removeAllViews();
 
-        // Otherwise, decide by label/speed buckets
-        switch (activity) {
-            case "still":   return 70;   // chill
-            case "walking": return 100;  // light groove
-            case "running": return 160;  // upbeat
-            case "wheels":  return 130;  // flowy
-            default:
-                // Fallback by speed if label is "-"
-                if (speedKmh <= 0.6f) return 70;
-                if (speedKmh <= 7.0f) return 100;
-                if (speedKmh <= 15.0f) return 160;
-                return 130;
+        if (savedPlaylists.isEmpty()) {
+            showEmptyState();
+        } else {
+            showPlaylistsContent(savedPlaylists);
         }
     }
 
-    private static int clamp(int v, int lo, int hi) {
-        return Math.max(lo, Math.min(hi, v));
+    private void showEmptyState() {
+        playlistScrollView.setVisibility(View.GONE);
+        emptyStateLayout.setVisibility(View.VISIBLE);
+    }
+
+    private void showPlaylistsContent(List<SpotifyPlaylist> savedPlaylists) {
+        emptyStateLayout.setVisibility(View.GONE);
+        playlistScrollView.setVisibility(View.VISIBLE);
+
+        for (SpotifyPlaylist playlist : savedPlaylists) {
+            View card = getLayoutInflater().inflate(
+                    R.layout.item_saved_playlist_card,
+                    savedPlaylistsContainer,
+                    false
+            );
+
+            ImageView img = card.findViewById(R.id.playlistImage);
+            TextView playlistName = card.findViewById(R.id.playlistName);
+            TextView playlistMeta = card.findViewById(R.id.playlistMeta);
+            MaterialButton btnPlay = card.findViewById(R.id.btnPlay);
+            MaterialButton btnSave = card.findViewById(R.id.btnSave);
+
+            playlistName.setText(playlist.name);
+            playlistMeta.setText(playlist.ownerName + " • " + playlist.totalTracks + " tracks");
+            if (playlist.imageUrl != null && !playlist.imageUrl.isEmpty()) {
+                Glide.with(requireContext()).load(playlist.imageUrl).into(img);
+            }
+
+            // Play button functionality
+            btnPlay.setOnClickListener(v -> PlaylistOpener.openPlaylist(requireContext(), playlist));
+
+            // Remove button functionality (bookmark is filled since it's saved)
+            btnSave.setOnClickListener(v -> {
+                savedPlaylistsManager.unsaveSpotifyPlaylist(playlist);
+                Toast.makeText(requireContext(), "Playlist removed from saved", Toast.LENGTH_SHORT).show();
+                loadSavedPlaylists(); // Refresh the list
+            });
+
+            savedPlaylistsContainer.addView(card);
+        }
     }
 }

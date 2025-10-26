@@ -1,9 +1,9 @@
 <resources>
     <string name="app_name">ContextTunes</string>
-    <string name="places_api_key"></string>
-
     <string name="latitude_format">Latitude: %1$.5f</string>
     <string name="longitude_format">Longitude: %1$.5f</string>
     <string name="latitude_na">Latitude: N/A</string>
     <string name="longitude_na">Longitude: N/A</string>
+
+    <string name="no_playlists_found">No playlists found. Try a different vibe.</string>
 </resources>

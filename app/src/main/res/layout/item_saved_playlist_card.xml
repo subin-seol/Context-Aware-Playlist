@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.card.MaterialCardView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginBottom="@dimen/space_12"
+    app:cardBackgroundColor="@color/card_dark"
+    app:cardCornerRadius="@dimen/radius_16"
+    app:cardElevation="@dimen/elev_2"
+    app:strokeColor="@android:color/transparent"
+    app:strokeWidth="0dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="@dimen/space_16"
+        android:gravity="center_vertical">
+
+        <!-- Playlist Image -->
+        <ImageView
+            android:id="@+id/playlistImage"
+            android:layout_width="60dp"
+            android:layout_height="60dp"
+            android:layout_marginEnd="@dimen/space_12"
+            android:scaleType="centerCrop"
+            android:contentDescription="Playlist cover image" />
+
+        <!-- Playlist Info -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/playlistName"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Playlist Name"
+                android:textColor="@color/text_primary"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/playlistMeta"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_4"
+                android:text="Recommendation reason"
+                android:textColor="@color/text_secondary"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <!-- Buttons Container -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <!-- Play Button -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnPlay"
+                style="@style/Widget.MaterialComponents.Button"
+                android:layout_width="80dp"
+                android:layout_height="36dp"
+                android:text="Play"
+                android:textAllCaps="false"
+                android:textSize="12sp"
+                app:cornerRadius="12dp"
+                app:backgroundTint="@color/teal_accent"
+                android:textColor="@android:color/black"
+                android:layout_marginEnd="@dimen/space_8" />
+
+            <!-- Save Button (Icon Only) -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnSave"
+                style="@style/Widget.MaterialComponents.Button.UnelevatedButton"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:textAllCaps="false"
+                app:cornerRadius="12dp"
+                android:backgroundTint="@android:color/transparent"
+                app:icon="@drawable/ic_saved"
+                app:iconSize="20dp"
+                app:iconTint="@color/teal_accent"
+                app:iconPadding="0dp"
+                app:iconGravity="textStart"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:paddingLeft="0dp"
+                android:paddingRight="0dp"
+                android:paddingTop="0dp"
+                android:paddingBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp" />
+
+        </LinearLayout>
+    </LinearLayout>
+</com.google.android.material.card.MaterialCardView>
