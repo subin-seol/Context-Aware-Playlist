@@ -87,6 +87,7 @@ public class LightSensor implements SensorEventListener {
         LightBucket bucket = classify(lux, lastBucket);
         if (bucket != lastBucket) {
             lastBucket = bucket;
+            android.util.Log.d("LightSensor", "lux=" + lux + " → " + bucket);
             emit(bucket);
         }
     }

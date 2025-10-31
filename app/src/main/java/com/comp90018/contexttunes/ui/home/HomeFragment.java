@@ -2,22 +2,30 @@ package com.comp90018.contexttunes.ui.home;
 
 import android.content.pm.PackageManager;
 import android.location.Location;
+import android.net.Uri;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.content.BroadcastReceiver;
+import android.content.Intent;
+import android.content.IntentFilter;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.ViewModelProvider;
+import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
+import com.bumptech.glide.Glide;
 import com.comp90018.contexttunes.BuildConfig;
 import com.comp90018.contexttunes.MainActivity;
+import com.comp90018.contexttunes.R;
 import com.comp90018.contexttunes.data.api.GooglePlacesAPI;
 import com.comp90018.contexttunes.data.sensors.LightSensor;
 import com.comp90018.contexttunes.data.sensors.LightSensor.LightBucket;
@@ -29,13 +37,16 @@ import com.comp90018.contexttunes.databinding.FragmentHomeBinding;
 import com.comp90018.contexttunes.domain.Context;
 import com.comp90018.contexttunes.domain.Recommendation;
 import com.comp90018.contexttunes.domain.RuleEngine;
-import com.comp90018.contexttunes.ui.viewModel.SharedCameraViewModel;
+import com.comp90018.contexttunes.data.viewModel.ImageViewModel;
+import com.comp90018.contexttunes.data.api.SpotifyAPI;
+import com.comp90018.contexttunes.domain.SpotifyPlaylist;
 import com.comp90018.contexttunes.utils.PermissionManager;
 import com.comp90018.contexttunes.utils.PlaylistOpener;
+import com.comp90018.contexttunes.utils.SavedPlaylistsManager;
 import com.comp90018.contexttunes.utils.SettingsManager;
 import com.google.android.libraries.places.api.model.Place;
-import com.comp90018.contexttunes.data.ai.AIPlaylistRecommender;
-import com.comp90018.contexttunes.utils.LocationContextHelper;
+import com.comp90018.contexttunes.services.SpeedSensorService;
+import com.comp90018.contexttunes.utils.AppEvents;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -53,17 +64,26 @@ public class HomeFragment extends Fragment {
     private WeatherState currentWeather = WeatherState.UNKNOWN;
     private LightBucket currentLightBucket = LightBucket.UNKNOWN;
 
-    private Recommendation currentRecommendation = null;
-    private List<Recommendation> currentRecommendations = new ArrayList<>();
+    private List<SpotifyPlaylist> spotifyPlaylists = new ArrayList<>();
+    private boolean playlistsGenerated = false;
     private boolean recommendationsGenerated = false;
 
     // Why are we asking for location permission right now?
     private enum Pending { NONE, WEATHER, PLACES }
     private Pending pending = Pending.NONE;
+    private SpotifyAPI spotifyAPI;
 
-    private AIPlaylistRecommender aiRecommender;
-    private LocationContextHelper locationHelper;
-    private boolean isGenerating = false;
+    // --- Speed sensing (20s test) state ---
+    private boolean measuring = false;
+    private long   measureStartedAt = 0L;
+
+    // live/last values during the 30s window
+    @Nullable private Float  liveSpeedKmh   = null;
+    @Nullable private Float  liveCadenceSpm = null;
+    @Nullable private String liveActivity   = null;
+
+    // keep the last activity label to feed into RuleEngine after the window
+    private String lastActivityLabel = "still";
 
 
     @Nullable
@@ -78,17 +98,23 @@ public class HomeFragment extends Fragment {
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
 
+        // Get the shared ViewModel
+        ImageViewModel viewModel = new ViewModelProvider(requireActivity()).get(ImageViewModel.class);
+
+        // init services/settings
         settingsManager = new SettingsManager(requireContext());
         locationSensor  = new LocationSensor(requireContext());
         googlePlacesAPI = GooglePlacesAPI.getInstance(requireContext());
         mockWeatherService = new MockWeatherService(requireContext());
-        aiRecommender = new AIPlaylistRecommender();
-        locationHelper = new LocationContextHelper(requireContext());
+        spotifyAPI = new SpotifyAPI(BuildConfig.SPOTIFY_ACCESS_TOKEN);
 
 
         // Header
         binding.welcomeTitle.setText("Welcome back!");
         updateWeatherStatus(WeatherState.UNKNOWN);
+
+        // Ask once so foreground notification can show on Android 13+
+        ensureNotificationPermissionIfNeeded();
 
         // ---- LIGHT SENSOR (respect Settings) ----
         if (settingsManager.isLightEnabled()) {
@@ -115,8 +141,15 @@ public class HomeFragment extends Fragment {
         );
 
         // ---- Generate / Regenerate ----
-        binding.btnGo.setOnClickListener(v -> generateRecommendations());
-        binding.btnRegenerate.setOnClickListener(v -> generateRecommendations());
+        binding.btnGo.setOnClickListener(v -> testSpotifyPlaylistSearch("party"));
+        binding.btnRegenerate.setOnClickListener(v -> testSpotifyPlaylistSearch("party"));
+        binding.btnSnapRegen.setOnClickListener(v -> ((MainActivity) requireActivity()).goToSnapTab());
+
+        // --- Sense (20s) test button ---
+        binding.btnSenseTest.setOnClickListener(v -> {
+            if (measuring) return;
+            ensurePermsThenSense();
+        });
 
         // ---- Preview captured image ----
         binding.btnPreviewImage.setOnClickListener(v ->
@@ -124,8 +157,6 @@ public class HomeFragment extends Fragment {
         );
 
         // Observe camera state to toggle visibility of buttons
-        SharedCameraViewModel viewModel = new ViewModelProvider(requireActivity())
-                .get(SharedCameraViewModel.class);
         viewModel.getCapturedImage().observe(getViewLifecycleOwner(), bitmap -> {
             if (bitmap != null) {
                 binding.btnSnap.setVisibility(View.GONE);
@@ -240,133 +271,6 @@ public class HomeFragment extends Fragment {
 
             Recommendation rec = RuleEngine.getRecommendation(ctx);
             binding.welcomeSubtitle.setText(rec.reason);
-            currentRecommendation = rec;
-        }
-    }
-
-    private void generateRecommendations() {
-        if (isGenerating) {
-            Log.d(TAG, "Already generating, ignoring click");
-            return;
-        }
-        isGenerating = true;
-
-        // Show loading state
-        binding.btnGo.setEnabled(false);
-        binding.btnGo.setText("Generating...");
-
-        // Collect non-location context
-        String timeOfDay = RuleEngine.getCurrentTimeOfDay();
-        String activity = "still"; // TODO: get from accelerometer when implemented
-
-        // Step 1: Get location context (if permission granted)
-        if (settingsManager.isLocationEnabled() &&
-                PermissionManager.hasLocationPermission(requireContext())) {
-
-            Log.d(TAG, "Fetching location context...");
-
-            locationSensor.getCurrentLocation(location -> {
-                if (location != null) {
-                    // Get location context (tagged place or nearby places)
-                    locationHelper.getLocationContext(location, (placeTag, nearbyPlaceTypes) -> {
-                        requireActivity().runOnUiThread(() -> {
-                            // Build full context with location
-                            Context ctx = new Context(
-                                    currentLightBucket,
-                                    timeOfDay,
-                                    activity,
-                                    currentWeather,
-                                    placeTag,
-                                    nearbyPlaceTypes
-                            );
-
-                            proceedWithRecommendation(ctx);
-                        });
-                    });
-                } else {
-                    // Location fetch failed, proceed without location
-                    Log.w(TAG, "Location unavailable, proceeding without it");
-                    requireActivity().runOnUiThread(() -> {
-                        Context ctx = new Context(currentLightBucket, timeOfDay, activity, currentWeather);
-                        proceedWithRecommendation(ctx);
-                    });
-                }
-            });
-        } else {
-            // Location disabled or no permission, proceed without it
-            Log.d(TAG, "Location disabled or no permission, proceeding without it");
-            Context ctx = new Context(currentLightBucket, timeOfDay, activity, currentWeather);
-            proceedWithRecommendation(ctx);
-        }
-    }
-
-    /**
-     * Helper method to generate recommendations once context is ready.
-     */
-    private void proceedWithRecommendation(@NonNull Context ctx) {
-        if (settingsManager.isAIMode()) {
-            // Use AI inference
-            Log.d(TAG, "Using AI mode for recommendations");
-
-            aiRecommender.getRecommendations(ctx, new AIPlaylistRecommender.AICallback() {
-                @Override
-                public void onSuccess(@NonNull List<Recommendation> recommendations) {
-
-                    Log.d(TAG, "AI SUCCESS - received " + recommendations.size() + " recommendations");
-                    for (int i = 0; i < recommendations.size(); i++) {
-                        Recommendation rec = recommendations.get(i);
-                        Log.d(TAG, "  " + (i+1) + ". " + rec.playlist.name + " - " + rec.reason);
-                    }
-                    currentRecommendations = recommendations;
-                    recommendationsGenerated = true;
-
-
-                    Log.d(TAG, "AI returned " + recommendations.size() + " recommendations");
-                    currentRecommendations = recommendations;
-                    recommendationsGenerated = true;
-
-                    // Reset button state
-                    binding.btnGo.setEnabled(true);
-                    binding.btnGo.setText("GO");
-                    isGenerating = false;
-
-                    showGeneratedState();
-                    Toast.makeText(requireContext(),
-                            "✨ AI recommendations ready",
-                            Toast.LENGTH_SHORT).show();
-                }
-
-                @Override
-                public void onError(@NonNull Exception e) {
-                    Log.e(TAG, "AI inference failed, using rule fallback", e);
-
-                    // Fall back to rule engine
-                    currentRecommendations = RuleEngine.getMultipleRecommendations(ctx);
-                    recommendationsGenerated = true;
-
-                    // Reset button state
-                    binding.btnGo.setEnabled(true);
-                    binding.btnGo.setText("GO");
-                    isGenerating = false;
-
-                    showGeneratedState();
-                    Toast.makeText(requireContext(),
-                            "Using rule-based recommendations",
-                            Toast.LENGTH_SHORT).show();
-                }
-            });
-        } else {
-            // Use rule engine
-            Log.d(TAG, "Using rule engine for recommendations");
-            currentRecommendations = RuleEngine.getMultipleRecommendations(ctx);
-            recommendationsGenerated = true;
-
-            // Reset button state
-            binding.btnGo.setEnabled(true);
-            binding.btnGo.setText("GO");
-            isGenerating = false;
-
-            showGeneratedState();
         }
     }
 
@@ -382,17 +286,23 @@ public class HomeFragment extends Fragment {
 
         // Show playlist suggestions section
         binding.playlistSuggestionsSection.setVisibility(View.VISIBLE);
-        populatePlaylistCards();
+        populateSpotifyPlaylistCards();
 
-        // Show/hide AI badge
-        if (settingsManager.isAIMode()) {
-            binding.aiModeBadge.setVisibility(View.VISIBLE);
-        } else {
-            binding.aiModeBadge.setVisibility(View.GONE);
-        }
+    }
 
-        // Show regenerate button
-        binding.btnRegenerate.setVisibility(View.VISIBLE);
+    private void showBeforeGenerationState() {
+        if (binding == null) return;
+
+        // Show "Create My Vibe" card
+        binding.createVibeCard.setVisibility(View.VISIBLE);
+        binding.welcomeSubtitle.setVisibility(View.VISIBLE);
+
+        // Hide "after generation" elements
+        binding.currentMoodCard.setVisibility(View.GONE);
+        binding.playlistSuggestionsSection.setVisibility(View.GONE);
+        binding.btnRegenerate.setVisibility(View.GONE);
+
+        recommendationsGenerated = false;
     }
 
     private void populateContextTags() {
@@ -442,29 +352,11 @@ public class HomeFragment extends Fragment {
         binding.contextTagsGroup.addView(chip);
     }
 
-    // Populate playlist cards based on current recommendations
-    private void populatePlaylistCards() {
-        binding.playlistCardsContainer.removeAllViews();
-
-        for (Recommendation rec : currentRecommendations) {
-            View card = getLayoutInflater().inflate(
-                    com.comp90018.contexttunes.R.layout.item_playlist_card,
-                    binding.playlistCardsContainer,
-                    false
-            );
-
-            // Potentially use View Binding here in the future to stay consistent
-            TextView playlistName   = card.findViewById(com.comp90018.contexttunes.R.id.playlistName);
-            TextView playlistReason = card.findViewById(com.comp90018.contexttunes.R.id.playlistReason);
-            com.google.android.material.button.MaterialButton btnPlay =
-                    card.findViewById(com.comp90018.contexttunes.R.id.btnPlay);
-
-            playlistName.setText(rec.playlist.name);
-            playlistReason.setText(rec.reason);
-
-            btnPlay.setOnClickListener(v -> PlaylistOpener.openPlaylist(requireContext(), rec.playlist));
-
-            binding.playlistCardsContainer.addView(card);
+    private void updateSaveButtonIcon(com.google.android.material.button.MaterialButton btnSave, boolean isSaved) {
+        if (isSaved) {
+            btnSave.setIconResource(com.comp90018.contexttunes.R.drawable.ic_saved);
+        } else {
+            btnSave.setIconResource(com.comp90018.contexttunes.R.drawable.ic_unsaved);
         }
     }
 
@@ -493,6 +385,88 @@ public class HomeFragment extends Fragment {
         });
     }
 
+    // ===================== SPEED SENSING =====================
+    // Receive frames from SpeedSensorService (~1 Hz)
+    private final BroadcastReceiver speedRx = new BroadcastReceiver() {
+        @Override public void onReceive(android.content.Context ctx, Intent i) {
+            if (!AppEvents.ACTION_SPEED_UPDATE.equals(i.getAction())) return;
+
+            float kmh = i.getFloatExtra(AppEvents.EXTRA_SPEED_KMH, 0f);
+            float spm = i.getFloatExtra(AppEvents.EXTRA_CADENCE_SPM, Float.NaN);
+            String act = i.getStringExtra(AppEvents.EXTRA_ACTIVITY);
+            boolean isFinal = i.getBooleanExtra(AppEvents.EXTRA_IS_FINAL, false);
+
+            liveSpeedKmh   = kmh;
+            liveCadenceSpm = Float.isNaN(spm) ? null : spm;
+            liveActivity   = (act == null || act.isEmpty()) ? "still" : act;
+
+            // Optional: show live numbers somewhere (Toast or a small TextView)
+            // For a simple smoke test:
+            // Toast.makeText(requireContext(), String.format(Locale.getDefault(),
+            //         "%s · %.1f km/h · %s", liveActivity, kmh,
+            //         (liveCadenceSpm==null?"–":String.format("%.0f spm", liveCadenceSpm))), Toast.LENGTH_SHORT).show();
+
+            if (isFinal) {
+                measuring = false;
+                lastActivityLabel = liveActivity == null ? "still" : liveActivity;
+                onSensingFinished();
+            }
+        }
+    };
+
+    /** Kick a 20s sensing window (foreground service via Intent action). */
+    private void startSpeedWindow() {
+        Intent i = new Intent(requireContext(), SpeedSensorService.class)
+                .setAction(AppEvents.ACTION_SPEED_SAMPLE_NOW);
+        androidx.core.content.ContextCompat.startForegroundService(requireContext(), i);
+    }
+
+    /** Gate by permissions, then start the window. */
+    private void ensurePermsThenSense() {
+        if (PermissionManager.hasActivityRecognition(requireContext())
+                && PermissionManager.hasAnyLocation(requireContext())) {
+            measuring = true;
+            measureStartedAt = System.currentTimeMillis();
+            liveSpeedKmh = null; liveCadenceSpm = null; liveActivity = null;
+
+            Toast.makeText(requireContext(), "Measuring activity for 20s…", Toast.LENGTH_SHORT).show();
+            startSpeedWindow();
+        } else {
+            PermissionManager.requestSpeedSensing(this);
+            // After user grants in onRequestPermissionsResult, call ensurePermsThenSense() again
+        }
+    }
+
+    /** Show the final sensed values without touching recommendations. */
+    // Called when measuring window ends in final frame
+    private void onSensingFinished() {
+        String summary = String.format(
+                java.util.Locale.getDefault(),
+                "Detected: %s • %s • %s",
+                (liveActivity == null ? "still" :
+                        liveActivity.substring(0,1).toUpperCase()+liveActivity.substring(1)),
+                (liveSpeedKmh==null ? "-" : String.format(java.util.Locale.getDefault(), "%.1f km/h", liveSpeedKmh)),
+                (liveCadenceSpm==null ? "-" : String.format(java.util.Locale.getDefault(), "%.0f spm", liveCadenceSpm))
+        );
+        Toast.makeText(requireContext(), summary, Toast.LENGTH_SHORT).show();
+    }
+
+    private static final int REQ_NOTIFICATIONS = 2001;
+
+    private void ensureNotificationPermissionIfNeeded() {
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            if (ContextCompat.checkSelfPermission(
+                    requireContext(), android.Manifest.permission.POST_NOTIFICATIONS
+            ) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(
+                        new String[]{ android.Manifest.permission.POST_NOTIFICATIONS },
+                        REQ_NOTIFICATIONS
+                );
+            }
+        }
+    }
+
+
     // ===================== PERMISSION RESULT =====================
 
     @Override
@@ -500,6 +474,20 @@ public class HomeFragment extends Fragment {
                                            @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
 
+        // --- SENSING PERMISSIONS (Activity + Multi-Location) ---
+        if (requestCode == PermissionManager.REQ_LOCATION_MULTI
+                || requestCode == PermissionManager.REQ_ACTIVITY) {
+            boolean anyGranted = false;
+            for (int r : grantResults) if (r == PackageManager.PERMISSION_GRANTED) { anyGranted = true; break; }
+            if (anyGranted) {
+                ensurePermsThenSense();
+            } else {
+                Toast.makeText(requireContext(), "Permissions needed for activity sensing", Toast.LENGTH_SHORT).show();
+            }
+            return;
+        }
+
+        // --- WEATHER / PLACES LOCATION (single fine location) ---
         if (requestCode == PermissionManager.REQ_LOCATION) {
             boolean granted = grantResults.length > 0
                     && grantResults[0] == PackageManager.PERMISSION_GRANTED;
@@ -532,6 +520,154 @@ public class HomeFragment extends Fragment {
         }
     }
 
+    // ===================== SPOTIFY PLAYLIST GENERATION =====================
+    private void testSpotifyPlaylistSearch(String query) {
+        Log.d(TAG, "Starting playlist search for search key: " + query);
+
+        // Disable buttons
+        binding.btnGo.setEnabled(false);
+        if (playlistsGenerated) {
+            binding.btnRegenerate.setEnabled(false);
+        }
+
+        // HIDE EVERYTHING
+        binding.welcomeCard.setVisibility(View.GONE);
+        binding.createVibeCard.setVisibility(View.GONE);
+        binding.currentMoodCard.setVisibility(View.GONE);
+        binding.regenerateCard.setVisibility(View.GONE);
+        binding.playlistSuggestionsSection.setVisibility(View.GONE);
+        binding.statsRow.setVisibility(View.GONE);
+        binding.recentTitle.setVisibility(View.GONE);
+        binding.recentItem.setVisibility(View.GONE);
+        binding.btnFetchPlaces.setVisibility(View.GONE);
+
+        // Show loading
+        binding.loadingContainer.setVisibility(View.VISIBLE);
+
+        spotifyAPI.searchPlaylists(query, 5, new SpotifyAPI.PlaylistCallback() {
+            @Override
+            public void onSuccess(List<SpotifyPlaylist> playlists) {
+                if (getActivity() == null) return;
+
+                requireActivity().runOnUiThread(() -> {
+                    spotifyPlaylists = playlists;
+                    playlistsGenerated = true;
+
+                    binding.loadingContainer.setVisibility(View.GONE);
+                    binding.btnGo.setEnabled(true);
+                    binding.btnRegenerate.setEnabled(true);
+
+                    // HIDE: welcome, create vibe, stats, recent activity
+                    binding.welcomeCard.setVisibility(View.GONE);
+                    binding.createVibeCard.setVisibility(View.GONE);
+                    binding.statsRow.setVisibility(View.GONE);
+                    binding.recentTitle.setVisibility(View.GONE);
+                    binding.recentItem.setVisibility(View.GONE);
+                    binding.btnFetchPlaces.setVisibility(View.GONE);
+
+                    // SHOW: current mood (centered), regenerate card, playlists
+                    binding.currentMoodCard.setVisibility(View.VISIBLE);
+                    binding.regenerateCard.setVisibility(View.VISIBLE);
+                    binding.playlistSuggestionsSection.setVisibility(View.VISIBLE);
+
+                    populateContextTags();
+                    populateSpotifyPlaylistCards();
+
+                    // Inline empty state (no toast-only)
+                    binding.playlistEmptyText.setVisibility(
+                            playlists.isEmpty() ? View.VISIBLE : View.GONE
+                    );
+                });
+            }
+
+            public void onError(String error) {
+                if (getActivity() == null) return;
+
+                requireActivity().runOnUiThread(() -> {
+                    Log.e(TAG, "Error occurred: " + error);
+
+                    // Hide loading
+                    binding.loadingContainer.setVisibility(View.GONE);
+                    binding.btnGo.setEnabled(true);
+                    binding.btnRegenerate.setEnabled(true);
+
+                    if (playlistsGenerated) {
+                        // Already had playlists - show AFTER generation state
+                        binding.currentMoodCard.setVisibility(View.VISIBLE);
+                        binding.regenerateCard.setVisibility(View.VISIBLE);
+                        binding.playlistSuggestionsSection.setVisibility(View.VISIBLE);
+                        // Show inline error as empty state
+                        binding.playlistCardsContainer.removeAllViews();
+                        binding.playlistEmptyText.setText(getString(R.string.no_playlists_found));
+                        binding.playlistEmptyText.setVisibility(View.VISIBLE);
+                    } else {
+                        // First time error - show BEFORE generation state
+                        binding.welcomeCard.setVisibility(View.VISIBLE);
+                        binding.createVibeCard.setVisibility(View.VISIBLE);
+                        binding.statsRow.setVisibility(View.VISIBLE);
+                        binding.recentTitle.setVisibility(View.VISIBLE);
+                        binding.recentItem.setVisibility(View.VISIBLE);
+                        Toast.makeText(requireContext(), "Error fetching playlists. Try again.", Toast.LENGTH_SHORT).show();
+                    }
+                });
+            }
+        });
+    }
+
+    // Populate playlist cards based on current recommendations
+    private void populateSpotifyPlaylistCards() {
+        Log.d(TAG, "Populating " + spotifyPlaylists.size() + " playlist cards");
+        binding.playlistCardsContainer.removeAllViews();
+
+        SavedPlaylistsManager saved = new SavedPlaylistsManager(requireContext());
+
+        for (SpotifyPlaylist playlist : spotifyPlaylists) {
+            View card = getLayoutInflater().inflate(
+                    R.layout.item_playlist_card,
+                    binding.playlistCardsContainer,
+                    false
+            );
+
+            ImageView playlistImage = card.findViewById(R.id.playlistImage);
+            TextView playlistName = card.findViewById(R.id.playlistName);
+            TextView playlistMeta = card.findViewById(R.id.playlistMeta);
+            com.google.android.material.button.MaterialButton btnPlay = card.findViewById(R.id.btnPlay);
+            com.google.android.material.button.MaterialButton btnSave =
+                    card.findViewById(R.id.btnSave); // bookmark toggle
+
+            if (playlist.imageUrl != null && !playlist.imageUrl.isEmpty()) {
+                Glide.with(requireContext())
+                        .load(playlist.imageUrl)
+                        .into(playlistImage);
+            }
+
+            playlistName.setText(playlist.name);
+            playlistMeta.setText(playlist.ownerName + " • " + playlist.totalTracks + " tracks");
+
+            btnPlay.setOnClickListener(v -> {
+                Log.d(TAG, "Opening playlist: " + playlist.externalUrl);
+                PlaylistOpener.openPlaylist(requireContext(), playlist);
+            });
+
+            // Initial saved state & icon
+            boolean isSaved = saved.isSpotifyPlaylistSaved(playlist);
+            updateSaveButtonIcon(btnSave, isSaved);
+            btnSave.setOnClickListener(v -> {
+                boolean currentlySaved = saved.isSpotifyPlaylistSaved(playlist);
+                if (currentlySaved) {
+                    saved.unsaveSpotifyPlaylist(playlist);
+                    Toast.makeText(requireContext(), "Playlist removed from saved", Toast.LENGTH_SHORT).show();
+                } else {
+                    saved.saveSpotifyPlaylist(playlist);
+                    Toast.makeText(requireContext(), "Playlist saved", Toast.LENGTH_SHORT).show();
+                }
+                updateSaveButtonIcon(btnSave, !currentlySaved);
+            });
+
+            binding.playlistCardsContainer.addView(card);
+        }
+    }
+
     // ===================== LIFECYCLE =====================
 
     @Override
@@ -540,11 +676,18 @@ public class HomeFragment extends Fragment {
         if (lightSensor != null && settingsManager.isLightEnabled()) {
             lightSensor.start();
         }
+
+        // listen only while fragment is visible
+        LocalBroadcastManager.getInstance(requireContext())
+                .registerReceiver(speedRx, new IntentFilter(AppEvents.ACTION_SPEED_UPDATE));
     }
 
     @Override
     public void onStop() {
         if (lightSensor != null) lightSensor.stop();
+        try {
+            LocalBroadcastManager.getInstance(requireContext()).unregisterReceiver(speedRx);
+        } catch (Exception ignore) {}
         super.onStop();
     }
 
@@ -552,6 +695,9 @@ public class HomeFragment extends Fragment {
     public void onDestroyView() {
         if (mockWeatherService != null) {
             mockWeatherService.shutdown();
+        }
+        if (spotifyAPI != null) {
+            spotifyAPI.shutdown();
         }
         binding = null;
         super.onDestroyView();

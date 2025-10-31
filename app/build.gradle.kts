@@ -15,9 +15,6 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-
-
-        
     }
 
     buildTypes {
@@ -37,6 +34,7 @@ android {
     buildFeatures {
         viewBinding = true
         buildConfig = true
+        mlModelBinding = true
     }
 }
 
@@ -58,12 +56,12 @@ dependencies {
     implementation("com.google.android.material:material:1.12.0")
     // Places and Maps SDKs
     implementation("com.google.android.libraries.places:places:4.3.1")
+    // Gson for JSON serialization
+    implementation("com.google.code.gson:gson:2.10.1")
+    implementation("com.amazonaws:aws-android-sdk-core:2.54.0")
+    implementation("com.amazonaws:aws-android-sdk-rekognition:2.54.0")
     // HTTP client for OpenAI API
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    // JSON parsing
-    implementation("com.google.code.gson:gson:2.10.1")
-
-
 }
 
 secrets {

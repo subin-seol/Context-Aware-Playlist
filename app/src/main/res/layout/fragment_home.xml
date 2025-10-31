@@ -13,7 +13,7 @@
         android:orientation="vertical"
         android:padding="@dimen/space_16">
 
-        <!-- Welcome Card -->
+        <!-- BEFORE: Welcome Card -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/welcomeCard"
             android:layout_width="match_parent"
@@ -32,7 +32,6 @@
                 android:gravity="center_vertical"
                 android:padding="@dimen/space_16">
 
-                <!-- Left: vertical stack -->
                 <LinearLayout
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
@@ -76,10 +75,8 @@
                         android:textColor="@color/text_secondary"
                         android:textSize="12sp"
                         android:includeFontPadding="false" />
-
                 </LinearLayout>
 
-                <!-- Right: music note icon -->
                 <ImageView
                     android:id="@+id/welcomeIcon"
                     android:layout_width="40dp"
@@ -90,7 +87,7 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- BEFORE GENERATION: Create My Vibe Card -->
+        <!-- BEFORE: Create My Vibe Card -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/createVibeCard"
             android:layout_width="match_parent"
@@ -120,31 +117,31 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnSnap"
-                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                    android:layout_width="wrap_content"
-                    android:layout_height="40dp"
-                    android:text=""
+                    style="@style/Widget.MaterialComponents.Button"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:insetLeft="0dp"
+                    android:insetTop="0dp"
+                    android:insetRight="0dp"
+                    android:insetBottom="0dp"
                     app:icon="@drawable/camera"
                     app:iconGravity="textStart"
-                    app:cornerRadius="14dp"
-                    app:strokeColor="@color/text_secondary"
-                    app:strokeWidth="1dp"
-                    app:iconTint="@color/text_primary"
-                    app:rippleColor="@color/divider_8" />
+                    app:iconPadding="0dp"
+                    app:cornerRadius="12dp"
+                    app:backgroundTint="#3A4A5C"
+                    app:iconTint="@color/text_primary" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnPreviewImage"
-                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    style="@style/Widget.MaterialComponents.Button"
                     android:layout_width="wrap_content"
-                    android:layout_height="40dp"
+                    android:layout_height="48dp"
+                    android:layout_marginStart="@dimen/space_12"
                     android:text="View Image"
                     android:textAllCaps="false"
-                    android:textColor="@color/text_primary"
-                    app:cornerRadius="14dp"
-                    app:strokeColor="@color/text_secondary"
-                    app:strokeWidth="1dp"
-                    app:iconTint="@color/text_primary"
-                    app:rippleColor="@color/divider_8"
+                    android:textColor="@android:color/black"
+                    app:cornerRadius="12dp"
+                    app:backgroundTint="@color/teal_accent"
                     android:visibility="gone"/>
 
                 <Space
@@ -155,20 +152,50 @@
                     android:id="@+id/btnGo"
                     style="@style/Widget.MaterialComponents.Button"
                     android:layout_width="wrap_content"
-                    android:layout_height="40dp"
+                    android:layout_height="48dp"
                     android:text="GO"
-                    app:cornerRadius="14dp"
+                    android:textAllCaps="true"
+                    android:paddingStart="24dp"
+                    android:paddingEnd="24dp"
+                    app:cornerRadius="12dp"
                     app:backgroundTint="@color/teal_accent"
                     android:textColor="@android:color/black" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- AFTER GENERATION: Current Mood Section -->
-        <com.google.android.material.card.MaterialCardView
+        <!-- AFTER: Current Mood (Centered, No Card) -->
+        <LinearLayout
             android:id="@+id/currentMoodCard"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_16"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:paddingTop="60dp"
+            android:paddingBottom="24dp"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Current Mood"
+                android:textColor="@color/text_primary"
+                android:textSize="28sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="@dimen/space_16" />
+
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/contextTagsGroup"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                app:chipSpacing="@dimen/space_8" />
+        </LinearLayout>
+
+        <!-- AFTER: Regenerate Card -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/regenerateCard"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
             android:visibility="gone"
             app:cardBackgroundColor="@color/card_dark"
             app:cardCornerRadius="@dimen/radius_20"
@@ -179,43 +206,97 @@
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
                 android:padding="@dimen/space_16">
 
                 <TextView
-                    android:layout_width="wrap_content"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:text="Current Mood"
+                    android:layout_weight="1"
+                    android:text="Regenerate Playlist"
                     android:textColor="@color/text_primary"
                     android:textSize="16sp"
-                    android:textStyle="bold"
-                    android:layout_marginBottom="@dimen/space_12" />
+                    android:textStyle="bold" />
 
-                <com.google.android.material.chip.ChipGroup
-                    android:id="@+id/contextTagsGroup"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    app:chipSpacing="@dimen/space_8" />
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnSnapRegen"
+                    style="@style/Widget.MaterialComponents.Button"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:insetLeft="0dp"
+                    android:insetTop="0dp"
+                    android:insetRight="0dp"
+                    android:insetBottom="0dp"
+                    app:icon="@drawable/camera"
+                    app:iconGravity="textStart"
+                    app:iconPadding="0dp"
+                    app:cornerRadius="12dp"
+                    app:backgroundTint="#3A4A5C"
+                    app:iconTint="@color/text_primary" />
+
+                <Space
+                    android:layout_width="@dimen/space_12"
+                    android:layout_height="0dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnRegenerate"
+                    style="@style/Widget.MaterialComponents.Button"
+                    android:layout_width="wrap_content"
+                    android:layout_height="48dp"
+                    android:text="GO"
+                    android:textAllCaps="true"
+                    android:paddingStart="24dp"
+                    android:paddingEnd="24dp"
+                    app:cornerRadius="12dp"
+                    app:backgroundTint="@color/teal_accent"
+                    android:textColor="@android:color/black" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- AFTER GENERATION: Playlist Suggestions Section -->
+        <!-- AFTER: Playlist Suggestions -->
         <LinearLayout
             android:id="@+id/playlistSuggestionsSection"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:layout_marginTop="@dimen/space_16"
+            android:layout_marginTop="24dp"
             android:visibility="gone">
 
-            <TextView
-                android:layout_width="wrap_content"
+            <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Playlist Suggestions"
-                android:textColor="@color/text_primary"
-                android:textSize="18sp"
-                android:textStyle="bold"
-                android:layout_marginBottom="@dimen/space_12" />
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="@dimen/space_16">
+
+                <ImageView
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:src="@drawable/baseline_music_note_24"
+                    app:tint="@color/teal_accent"
+                    android:layout_marginEnd="@dimen/space_8"
+                    android:contentDescription="Music icon"/>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Playlist Suggestions"
+                    android:textColor="@color/text_primary"
+                    android:textSize="18sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/playlistEmptyText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:padding="@dimen/space_12"
+                android:text="@string/no_playlists_found"
+                android:textColor="@color/text_secondary"
+                android:textSize="14sp"
+                android:gravity="center"
+                android:visibility="gone"/>
 
             <TextView
                 android:id="@+id/aiModeBadge"
@@ -236,23 +317,7 @@
                 android:orientation="vertical" />
         </LinearLayout>
 
-        <!-- AFTER GENERATION: Regenerate Button -->
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnRegenerate"
-            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-            android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:text="Regenerate Playlist"
-            android:textColor="@color/teal_accent"
-            android:textAllCaps="false"
-            app:cornerRadius="12dp"
-            app:strokeColor="@color/teal_accent"
-            app:strokeWidth="1dp"
-            android:layout_marginTop="@dimen/space_16"
-            android:visibility="gone" />
-
-
-        <!-- Stats row -->
+        <!-- BEFORE: Stats (hidden after generation) -->
         <LinearLayout
             android:id="@+id/statsRow"
             android:layout_width="match_parent"
@@ -260,7 +325,6 @@
             android:layout_marginTop="@dimen/space_16"
             android:orientation="horizontal">
 
-            <!-- Stat 1 -->
             <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="100dp"
@@ -287,7 +351,6 @@
                     android:textSize="12sp"/>
             </LinearLayout>
 
-            <!-- Stat 2 -->
             <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="100dp"
@@ -314,7 +377,6 @@
                     android:textSize="12sp"/>
             </LinearLayout>
 
-            <!-- Stat 3 -->
             <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="100dp"
@@ -341,7 +403,7 @@
             </LinearLayout>
         </LinearLayout>
 
-        <!-- Recent Activity -->
+        <!-- BEFORE: Recent Activity (hidden after generation) -->
         <TextView
             android:id="@+id/recentTitle"
             android:layout_width="wrap_content"
@@ -395,12 +457,45 @@
                     android:includeFontPadding="false"/>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
-
-        <Button
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/btn_fetch_places"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Fetch Nearby Places" />
+            android:text="Fetch Nearby Places"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnSenseTest"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Sense (20s)" />
+
+        <!-- Loading Container -->
+        <LinearLayout
+            android:id="@+id/loadingContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="100dp"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:padding="32dp"
+            android:visibility="gone">
+
+            <ProgressBar
+                android:layout_width="60dp"
+                android:layout_height="60dp"
+                android:indeterminateTint="@color/teal_accent" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_16"
+                android:text="Generating your playlists..."
+                android:textColor="@color/text_primary"
+                android:textSize="16sp"
+                android:textAlignment="center" />
+        </LinearLayout>
 
     </LinearLayout>
 </androidx.core.widget.NestedScrollView>
