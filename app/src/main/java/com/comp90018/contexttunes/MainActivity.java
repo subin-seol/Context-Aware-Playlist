@@ -64,9 +64,6 @@ public class MainActivity extends AppCompatActivity {
             if (id == R.id.nav_home){
                 // Go to home
                 selectedFragment = new HomeFragment();
-            } else if (id == R.id.nav_snap){
-                // Go to snap
-                selectedFragment = new SnapFragment();
             } else if (id == R.id.nav_playlist){
                 // Go to playlist
                 selectedFragment = new PlaylistFragment();
@@ -111,9 +108,11 @@ public class MainActivity extends AppCompatActivity {
         binding.bottomNav.setSelectedItemId(R.id.nav_home);
     }
 
-    public void goToSnapTab() {
-        // This triggers the BottomNavigationView listener and loads HomeFragment
-        binding.bottomNav.setSelectedItemId(R.id.nav_snap);
+    public void openSnap() {
+        getSupportFragmentManager().beginTransaction()
+                .replace(R.id.fragment_container, new com.comp90018.contexttunes.ui.snap.SnapFragment())
+                .addToBackStack(null)
+                .commit();
     }
 
 

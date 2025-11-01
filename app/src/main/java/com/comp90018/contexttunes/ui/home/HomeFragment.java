@@ -1,8 +1,6 @@
 package com.comp90018.contexttunes.ui.home;
 
 import android.content.pm.PackageManager;
-import android.location.Location;
-import android.net.Uri;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.LayoutInflater;
@@ -14,6 +12,7 @@ import android.widget.Toast;
 import android.content.BroadcastReceiver;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.graphics.Bitmap;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -26,7 +25,7 @@ import com.bumptech.glide.Glide;
 import com.comp90018.contexttunes.BuildConfig;
 import com.comp90018.contexttunes.MainActivity;
 import com.comp90018.contexttunes.R;
-import com.comp90018.contexttunes.data.api.GooglePlacesAPI;
+import com.comp90018.contexttunes.domain.AIPlaylistRecommender;
 import com.comp90018.contexttunes.data.sensors.LightSensor;
 import com.comp90018.contexttunes.data.sensors.LightSensor.LightBucket;
 import com.comp90018.contexttunes.data.sensors.LocationSensor;
@@ -35,8 +34,7 @@ import com.comp90018.contexttunes.data.weather.WeatherService;
 import com.comp90018.contexttunes.data.weather.WeatherService.WeatherState;
 import com.comp90018.contexttunes.databinding.FragmentHomeBinding;
 import com.comp90018.contexttunes.domain.Context;
-import com.comp90018.contexttunes.domain.Recommendation;
-import com.comp90018.contexttunes.domain.RuleEngine;
+import com.comp90018.contexttunes.domain.SearchRecommendation;
 import com.comp90018.contexttunes.data.viewModel.ImageViewModel;
 import com.comp90018.contexttunes.data.api.SpotifyAPI;
 import com.comp90018.contexttunes.domain.SpotifyPlaylist;
@@ -44,47 +42,59 @@ import com.comp90018.contexttunes.utils.PermissionManager;
 import com.comp90018.contexttunes.utils.PlaylistOpener;
 import com.comp90018.contexttunes.utils.SavedPlaylistsManager;
 import com.comp90018.contexttunes.utils.SettingsManager;
-import com.google.android.libraries.places.api.model.Place;
+import com.comp90018.contexttunes.domain.ImageLabels;
 import com.comp90018.contexttunes.services.SpeedSensorService;
 import com.comp90018.contexttunes.utils.AppEvents;
+import com.comp90018.contexttunes.utils.LocationContextHelper;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.time.LocalTime;
+import java.util.Locale;
 
 public class HomeFragment extends Fragment {
     private static final String TAG = "HomeFragment";
+    private static final int DEFAULT_WINDOW_SECONDS = 20;
 
     private FragmentHomeBinding binding;
     private SettingsManager settingsManager;
     private LightSensor lightSensor;
     private LocationSensor locationSensor;
-    private GooglePlacesAPI googlePlacesAPI;
-
+    private LocationContextHelper locationHelper;
+    private AIPlaylistRecommender aiRecommender;
+    private SpotifyAPI spotifyAPI;
     private MockWeatherService mockWeatherService;
+
     private WeatherState currentWeather = WeatherState.UNKNOWN;
     private LightBucket currentLightBucket = LightBucket.UNKNOWN;
 
-    private List<SpotifyPlaylist> spotifyPlaylists = new ArrayList<>();
-    private boolean playlistsGenerated = false;
-    private boolean recommendationsGenerated = false;
+    // timer to guarantee window end even if service isn't running
+    private final android.os.Handler handler = new android.os.Handler(android.os.Looper.getMainLooper());
 
-    // Why are we asking for location permission right now?
-    private enum Pending { NONE, WEATHER, PLACES }
-    private Pending pending = Pending.NONE;
-    private SpotifyAPI spotifyAPI;
+    // ---- window coordination (speed + labels) ----
+    private volatile boolean speedReady  = false;
+    private volatile boolean labelsReady = false;
+    private static final int LABELS_TIMEOUT_MS = 8000; // hard stop for Rekognition
+    @Nullable private Runnable windowWatchdog = null;
 
-    // --- Speed sensing (20s test) state ---
-    private boolean measuring = false;
-    private long   measureStartedAt = 0L;
 
-    // live/last values during the 30s window
+    // live values from SpeedSensorService (if running)
     @Nullable private Float  liveSpeedKmh   = null;
     @Nullable private Float  liveCadenceSpm = null;
     @Nullable private String liveActivity   = null;
-
-    // keep the last activity label to feed into RuleEngine after the window
     private String lastActivityLabel = "still";
 
+    // camera labels
+    @Nullable private ImageLabels currentImageLabels = null;
+    private ImageViewModel imageVM;
+
+    // state
+    private List<SpotifyPlaylist> spotifyPlaylists = new ArrayList<>();
+    private boolean playlistsGenerated = false;
+    // The exact context used for AI/Spotify (for chips)
+    @Nullable private Context lastContext = null;
+
+    // ===================== LIFECYCLE =====================
 
     @Nullable
     @Override
@@ -98,16 +108,24 @@ public class HomeFragment extends Fragment {
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
 
-        // Get the shared ViewModel
-        ImageViewModel viewModel = new ViewModelProvider(requireActivity()).get(ImageViewModel.class);
+        // Shared VM with SnapFragment: observe image + labels
+        imageVM = new ViewModelProvider(requireActivity()).get(ImageViewModel.class);
+        imageVM.getCapturedImage().observe(getViewLifecycleOwner(), bitmap -> {
+            binding.btnSnap.setVisibility(bitmap != null ? View.GONE : View.VISIBLE);
+            binding.btnPreviewImage.setVisibility(bitmap != null ? View.VISIBLE : View.GONE);
+        });
+
+        imageVM.getImageLabels().observe(getViewLifecycleOwner(), labels -> {
+            currentImageLabels = labels; // keep latest labels for context & chips
+        });
 
         // init services/settings
-        settingsManager = new SettingsManager(requireContext());
-        locationSensor  = new LocationSensor(requireContext());
-        googlePlacesAPI = GooglePlacesAPI.getInstance(requireContext());
-        mockWeatherService = new MockWeatherService(requireContext());
-        spotifyAPI = new SpotifyAPI(BuildConfig.SPOTIFY_ACCESS_TOKEN);
-
+        settingsManager   = new SettingsManager(requireContext());
+        locationSensor    = new LocationSensor(requireContext());
+        locationHelper    = new LocationContextHelper(requireContext());
+        mockWeatherService= new MockWeatherService(requireContext());
+        aiRecommender     = new AIPlaylistRecommender();
+        spotifyAPI        = new SpotifyAPI(BuildConfig.SPOTIFY_ACCESS_TOKEN);
 
         // Header
         binding.welcomeTitle.setText("Welcome back!");
@@ -116,13 +134,13 @@ public class HomeFragment extends Fragment {
         // Ask once so foreground notification can show on Android 13+
         ensureNotificationPermissionIfNeeded();
 
-        // ---- LIGHT SENSOR (respect Settings) ----
+        // LIGHT
         if (settingsManager.isLightEnabled()) {
             lightSensor = new LightSensor(requireContext(), bucket -> {
                 if (binding == null) return;
                 requireActivity().runOnUiThread(() -> {
+                    currentLightBucket = bucket;
                     updateLightStatus(bucket);
-                    updateRecommendation(bucket);
                 });
             });
         }
@@ -135,46 +153,13 @@ public class HomeFragment extends Fragment {
             updateWeatherStatus(WeatherState.UNKNOWN);
         }
 
-        // ---- SNAP navigation ----
-        binding.btnSnap.setOnClickListener(v ->
-                ((MainActivity) requireActivity()).goToSnapTab()
-        );
+        // SNAP nav
+        binding.btnSnap.setOnClickListener(v -> ((MainActivity) requireActivity()).openSnap());
+        binding.btnPreviewImage.setOnClickListener(v -> ((MainActivity) requireActivity()).openSnap());
 
-        // ---- Generate / Regenerate ----
-        binding.btnGo.setOnClickListener(v -> testSpotifyPlaylistSearch("party"));
-        binding.btnRegenerate.setOnClickListener(v -> testSpotifyPlaylistSearch("party"));
-        binding.btnSnapRegen.setOnClickListener(v -> ((MainActivity) requireActivity()).goToSnapTab());
-
-        // --- Sense (20s) test button ---
-        binding.btnSenseTest.setOnClickListener(v -> {
-            if (measuring) return;
-            ensurePermsThenSense();
-        });
-
-        // ---- Preview captured image ----
-        binding.btnPreviewImage.setOnClickListener(v ->
-                ((MainActivity) requireActivity()).goToSnapTab()
-        );
-
-        // Observe camera state to toggle visibility of buttons
-        viewModel.getCapturedImage().observe(getViewLifecycleOwner(), bitmap -> {
-            if (bitmap != null) {
-                binding.btnSnap.setVisibility(View.GONE);
-                binding.btnPreviewImage.setVisibility(View.VISIBLE);
-            } else {
-                binding.btnSnap.setVisibility(View.VISIBLE);
-                binding.btnPreviewImage.setVisibility(View.GONE);
-            }
-        });
-
-        // ---- Nearby Places (point-of-use permission) ----
-        binding.btnFetchPlaces.setOnClickListener(v -> {
-            if (!settingsManager.isLocationEnabled()) {
-                Toast.makeText(requireContext(), "Location services disabled in settings", Toast.LENGTH_SHORT).show();
-                return;
-            }
-            ensureLocationThenFetchPlaces();
-        });
+        // GO / Regenerate → run the 20s window + context + AI + Spotify
+        binding.btnGo.setOnClickListener(v -> beginWindow(DEFAULT_WINDOW_SECONDS));
+        binding.btnRegenerate.setOnClickListener(v -> beginWindow(DEFAULT_WINDOW_SECONDS));
     }
 
     // ===================== PERMISSION-GATED ACTIONS =====================
@@ -183,27 +168,7 @@ public class HomeFragment extends Fragment {
     private void ensureLocationAndFetchWeather() {
         if (PermissionManager.hasLocationPermission(requireContext())) {
             fetchWeatherData();
-            pending = Pending.NONE;
         } else {
-            pending = Pending.WEATHER;
-            PermissionManager.requestLocation(this);
-        }
-    }
-
-    /** Places: request permission if needed, then fetch nearby with current location. */
-    private void ensureLocationThenFetchPlaces() {
-        if (PermissionManager.hasLocationPermission(requireContext())) {
-            locationSensor.getCurrentLocation(location -> {
-                if (location == null) {
-                    requireActivity().runOnUiThread(() ->
-                            Toast.makeText(requireContext(), "Couldn't get location", Toast.LENGTH_SHORT).show());
-                    return;
-                }
-                fetchNearbyPlaces(location);
-            });
-            pending = Pending.NONE;
-        } else {
-            pending = Pending.PLACES;
             PermissionManager.requestLocation(this);
         }
     }
@@ -227,7 +192,6 @@ public class HomeFragment extends Fragment {
 
             currentWeather = converted;
             requireActivity().runOnUiThread(() -> {
-                updateRecommendation(null); // use current light
                 updateWeatherStatus(currentWeather);
             });
         });
@@ -259,134 +223,112 @@ public class HomeFragment extends Fragment {
         binding.lightValue.setText(lightText);
     }
 
-    // ===================== RECOMMENDATION =====================
+    // ===================== FIXED 20s WINDOW PIPELINE =====================
 
-    private void updateRecommendation(@Nullable LightBucket lightBucket) {
-        if (lightBucket != null) currentLightBucket = lightBucket;
+    private void beginWindow(int seconds) {
+        // pre-UI → loading
+        showLoading(true);
 
-        if (!recommendationsGenerated) { // only auto-update before first generation
-            String timeOfDay = RuleEngine.getCurrentTimeOfDay();
-            String activity  = "still"; // mock
-            Context ctx = new Context(currentLightBucket, timeOfDay, activity, currentWeather);
+        // if user enabled “Accelerometer” in Settings, that’s our “speed pipeline” master toggle
+        boolean speedEnabled = settingsManager.isAccelerometerEnabled();
+        boolean hasAR = PermissionManager.hasActivityRecognition(requireContext());
+        boolean hasAnyLoc = PermissionManager.hasAnyLocation(requireContext());
 
-            Recommendation rec = RuleEngine.getRecommendation(ctx);
-            binding.welcomeSubtitle.setText(rec.reason);
-        }
-    }
-
-    private void showGeneratedState() {
-        if (binding == null) return;
-
-        // Hide "Create My Vibe" card
-        binding.createVibeCard.setVisibility(View.GONE);
-
-        // Show "Current Mood" card
-        binding.currentMoodCard.setVisibility(View.VISIBLE);
-        populateContextTags();
-
-        // Show playlist suggestions section
-        binding.playlistSuggestionsSection.setVisibility(View.VISIBLE);
-        populateSpotifyPlaylistCards();
-
-    }
-
-    private void showBeforeGenerationState() {
-        if (binding == null) return;
-
-        // Show "Create My Vibe" card
-        binding.createVibeCard.setVisibility(View.VISIBLE);
-        binding.welcomeSubtitle.setVisibility(View.VISIBLE);
-
-        // Hide "after generation" elements
-        binding.currentMoodCard.setVisibility(View.GONE);
-        binding.playlistSuggestionsSection.setVisibility(View.GONE);
-        binding.btnRegenerate.setVisibility(View.GONE);
-
-        recommendationsGenerated = false;
-    }
-
-    private void populateContextTags() {
-        binding.contextTagsGroup.removeAllViews();
-
-        // Activity tag (mocked as "still" for now)
-        addContextChip("Still", android.graphics.Color.parseColor("#2D3748"));
-
-        String lightText;
-        switch (currentLightBucket) {
-            case DIM:    lightText = "Dim";    break;
-            case NORMAL: lightText = "Normal"; break;
-            case BRIGHT: lightText = "Bright"; break;
-            default:     lightText = "Unknown";
-        }
-        if (currentLightBucket != LightBucket.UNKNOWN) {
-            addContextChip(lightText, android.graphics.Color.parseColor("#2D3748"));
+        if (speedEnabled && hasAR && hasAnyLoc) {
+            startSpeedWindow(seconds); // service will emit FINAL on time
+        } else if (speedEnabled && (!hasAR || !hasAnyLoc)) {
+            // ask once at point-of-use; user can grant and tap GO again
+            PermissionManager.requestSpeedSensing(this);
         }
 
-        String weatherText;
-        switch (currentWeather) {
-            case SUNNY:  weatherText = "Sunny";  break;
-            case CLOUDY: weatherText = "Cloudy"; break;
-            case RAINY:  weatherText = "Rainy";  break;
-            default:     weatherText = "";
-        }
-        if (!weatherText.isEmpty()) {
-            addContextChip(weatherText, android.graphics.Color.parseColor("#2D3748"));
-        }
+        // reset join state every run
+        speedReady = !settingsManager.isAccelerometerEnabled(); // if speed disabled, treat as ready
+        labelsReady = true; // default true; we’ll set false only if we actually need to run analysis
 
-        // Time of day tag (capitalize first letter)
-        String timeOfDay = RuleEngine.getCurrentTimeOfDay();
-        String capitalized = timeOfDay.substring(0,1).toUpperCase() + timeOfDay.substring(1);
-        addContextChip(capitalized, android.graphics.Color.parseColor("#2D3748"));
+        maybeStartImageLabelsWork();
+
+        // Regardless, we arm the same-duration watchdog → single source of truth UX
+        armWatchdog(seconds);
     }
 
-    // Add a single context chip to the chip group
-    private void addContextChip(String text, int backgroundColor) {
-        com.google.android.material.chip.Chip chip =
-                new com.google.android.material.chip.Chip(requireContext());
-        chip.setText(text);
-        chip.setChipBackgroundColor(android.content.res.ColorStateList.valueOf(backgroundColor));
-        chip.setTextColor(ContextCompat.getColor(requireContext(),
-                com.comp90018.contexttunes.R.color.text_primary));
-        chip.setClickable(false);
-        chip.setChipCornerRadius(24f);
-        binding.contextTagsGroup.addView(chip);
-    }
+    private void maybeStartImageLabelsWork() {
+        Bitmap img = imageVM.getCapturedImage().getValue();
+        ImageLabels labels = imageVM.getImageLabels().getValue();
 
-    private void updateSaveButtonIcon(com.google.android.material.button.MaterialButton btnSave, boolean isSaved) {
-        if (isSaved) {
-            btnSave.setIconResource(com.comp90018.contexttunes.R.drawable.ic_saved);
-        } else {
-            btnSave.setIconResource(com.comp90018.contexttunes.R.drawable.ic_unsaved);
+        // If no image, nothing to do
+        if (img == null) {
+            labelsReady = true;
+            return;
         }
-    }
 
-    // ===================== PLACES =====================
+        // If labels already exist for the CURRENT image (cache hit), done.
+        if (labels != null && labels.matchesCurrentImage(img)) {
+            labelsReady = true;
+            return;
+        }
 
-    private void fetchNearbyPlaces(Location location) {
-        googlePlacesAPI.getNearbyPlaces(location, 300, new GooglePlacesAPI.NearbyPlacesCallback() {
-            @Override
-            public void onPlacesFound(List<Place> places) {
-                if (places.isEmpty()) {
-                    Toast.makeText(requireContext(), "No nearby places found", Toast.LENGTH_SHORT).show();
-                } else {
-                    for (Place p : places) {
-                        Log.d(TAG, "Found place: " + p.getDisplayName() + " (" + p.getPrimaryType() + ")");
-                    }
-                    Toast.makeText(requireContext(),
-                            "Found " + places.size() + " places", Toast.LENGTH_SHORT).show();
-                }
+        // We need to (re)generate labels.
+        labelsReady = false;
+
+        // Run analyser (AWS Rekognition) with a timeout guard.
+        final android.os.Handler h = new android.os.Handler(android.os.Looper.getMainLooper());
+        final Runnable timeout = () -> {
+            if (!labelsReady) {
+                Log.w(TAG, "Labels timeout — proceeding without image labels.");
+                labelsReady = true;
+                tryProceedIfAllReady();
             }
+        };
+        h.postDelayed(timeout, LABELS_TIMEOUT_MS);
 
-            @Override
-            public void onError(Exception e) {
-                Log.e(TAG, "Places API error", e);
-                Toast.makeText(requireContext(), "Places API error", Toast.LENGTH_SHORT).show();
+        // Observe a single update, then remove observer
+        imageVM.getImageLabels().observe(getViewLifecycleOwner(), newLabels -> {
+            if (newLabels != null && newLabels.matchesCurrentImage(img)) {
+                labelsReady = true;
+                h.removeCallbacks(timeout);
+                imageVM.getImageLabels().removeObservers(getViewLifecycleOwner());
+                tryProceedIfAllReady();
             }
         });
+
+        // Fire analysis (non-blocking). (Uses the same instance as Snap’s button)
+        new com.comp90018.contexttunes.services.ImageAnalyser(requireContext())
+                .analyzeImage(imageVM);   // This posts into imageVM on completion
     }
 
-    // ===================== SPEED SENSING =====================
-    // Receive frames from SpeedSensorService (~1 Hz)
+    private void startSpeedWindow(int seconds) {
+        Intent i = new Intent(requireContext(), SpeedSensorService.class)
+                .setAction(AppEvents.ACTION_SPEED_SAMPLE_NOW);
+        i.putExtra(AppEvents.EXTRA_WINDOW_SECONDS, seconds);
+        ContextCompat.startForegroundService(requireContext(), i);
+    }
+
+    private void armWatchdog(int seconds) {
+        cancelWatchdog();
+        windowWatchdog = () -> {
+            // service may not have sent FINAL yet; we use last known
+            if (liveActivity != null && !liveActivity.isEmpty()) lastActivityLabel = liveActivity;
+            speedReady = true; // stop waiting on speed
+            tryProceedIfAllReady();
+        };
+        handler.postDelayed(windowWatchdog, (seconds + 2) * 1000L); // +2s slack
+    }
+
+    private void tryProceedIfAllReady() {
+        if (!speedReady || !labelsReady) return;
+
+        final String timeOfDay = computeTimeOfDay();
+        final String act = (lastActivityLabel == null || lastActivityLabel.isEmpty()) ? "still" : lastActivityLabel;
+        resolveLocationThenProceed(timeOfDay, act);
+    }
+
+    private void cancelWatchdog() {
+        if (windowWatchdog != null) {
+            handler.removeCallbacks(windowWatchdog);
+            windowWatchdog = null;
+        }
+    }
+    // receive frames from SpeedSensorService
     private final BroadcastReceiver speedRx = new BroadcastReceiver() {
         @Override public void onReceive(android.content.Context ctx, Intent i) {
             if (!AppEvents.ACTION_SPEED_UPDATE.equals(i.getAction())) return;
@@ -400,155 +342,123 @@ public class HomeFragment extends Fragment {
             liveCadenceSpm = Float.isNaN(spm) ? null : spm;
             liveActivity   = (act == null || act.isEmpty()) ? "still" : act;
 
-            // Optional: show live numbers somewhere (Toast or a small TextView)
-            // For a simple smoke test:
-            // Toast.makeText(requireContext(), String.format(Locale.getDefault(),
-            //         "%s · %.1f km/h · %s", liveActivity, kmh,
-            //         (liveCadenceSpm==null?"–":String.format("%.0f spm", liveCadenceSpm))), Toast.LENGTH_SHORT).show();
-
             if (isFinal) {
-                measuring = false;
-                lastActivityLabel = liveActivity == null ? "still" : liveActivity;
-                onSensingFinished();
+                cancelWatchdog();
+                lastActivityLabel = (liveActivity == null ? "still" : liveActivity);
+                speedReady = true;
+                tryProceedIfAllReady();
             }
         }
     };
 
-    /** Kick a 20s sensing window (foreground service via Intent action). */
-    private void startSpeedWindow() {
-        Intent i = new Intent(requireContext(), SpeedSensorService.class)
-                .setAction(AppEvents.ACTION_SPEED_SAMPLE_NOW);
-        androidx.core.content.ContextCompat.startForegroundService(requireContext(), i);
-    }
-
-    /** Gate by permissions, then start the window. */
-    private void ensurePermsThenSense() {
-        if (PermissionManager.hasActivityRecognition(requireContext())
-                && PermissionManager.hasAnyLocation(requireContext())) {
-            measuring = true;
-            measureStartedAt = System.currentTimeMillis();
-            liveSpeedKmh = null; liveCadenceSpm = null; liveActivity = null;
-
-            Toast.makeText(requireContext(), "Measuring activity for 20s…", Toast.LENGTH_SHORT).show();
-            startSpeedWindow();
+    private void resolveLocationThenProceed(String timeOfDay, String activity) {
+        if (settingsManager.isLocationEnabled() && PermissionManager.hasAnyLocation(requireContext())) {
+            locationSensor.getCurrentLocation(loc -> {
+                if (loc == null) {
+                    buildContextAndProceed(timeOfDay, activity, null, null);
+                } else {
+                    locationHelper.getLocationContext(loc, (placeTag, nearby) ->
+                            buildContextAndProceed(timeOfDay, activity, placeTag, nearby));
+                }
+            });
         } else {
-            PermissionManager.requestSpeedSensing(this);
-            // After user grants in onRequestPermissionsResult, call ensurePermsThenSense() again
+            buildContextAndProceed(timeOfDay, activity, null, null);
         }
     }
 
-    /** Show the final sensed values without touching recommendations. */
-    // Called when measuring window ends in final frame
-    private void onSensingFinished() {
-        String summary = String.format(
-                java.util.Locale.getDefault(),
-                "Detected: %s • %s • %s",
-                (liveActivity == null ? "still" :
-                        liveActivity.substring(0,1).toUpperCase()+liveActivity.substring(1)),
-                (liveSpeedKmh==null ? "-" : String.format(java.util.Locale.getDefault(), "%.1f km/h", liveSpeedKmh)),
-                (liveCadenceSpm==null ? "-" : String.format(java.util.Locale.getDefault(), "%.0f spm", liveCadenceSpm))
+    private void buildContextAndProceed(String timeOfDay, String activity,
+                                        @Nullable String placeTag, @Nullable List<String> nearbyTypes) {
+        // Extract top-N image labels (strings only) from VM
+        List<String> img = topImageLabelStrings(3);
+
+        Context ctx = new Context(
+                currentLightBucket, timeOfDay, activity, currentWeather,
+                placeTag, (nearbyTypes == null ? new ArrayList<>() : nearbyTypes),
+                img
         );
-        Toast.makeText(requireContext(), summary, Toast.LENGTH_SHORT).show();
+        proceedWithContext(ctx);
     }
 
-    private static final int REQ_NOTIFICATIONS = 2001;
+    private void proceedWithContext(@NonNull Context ctx) {
+        lastContext = ctx; // store the exact context for chips rendering
 
-    private void ensureNotificationPermissionIfNeeded() {
-        if (android.os.Build.VERSION.SDK_INT >= 33) {
-            if (ContextCompat.checkSelfPermission(
-                    requireContext(), android.Manifest.permission.POST_NOTIFICATIONS
-            ) != PackageManager.PERMISSION_GRANTED) {
-                requestPermissions(
-                        new String[]{ android.Manifest.permission.POST_NOTIFICATIONS },
-                        REQ_NOTIFICATIONS
-                );
-            }
-        }
-    }
+        // 1) Decide if we have ANY context at all
+        boolean hasLight   = (ctx.lightLevel != null && ctx.lightLevel != LightBucket.UNKNOWN);
+        boolean hasWeather = (ctx.weather != null && ctx.weather != WeatherState.UNKNOWN);
+        boolean hasAct     = (ctx.activity != null && !ctx.activity.trim().isEmpty());
+        boolean hasPlace   = (ctx.placeTag != null) || (ctx.nearbyPlaceTypes != null && !ctx.nearbyPlaceTypes.isEmpty());
+        boolean hasImage   = (ctx.imageLabels != null && !ctx.imageLabels.isEmpty());
 
-
-    // ===================== PERMISSION RESULT =====================
-
-    @Override
-    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions,
-                                           @NonNull int[] grantResults) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-
-        // --- SENSING PERMISSIONS (Activity + Multi-Location) ---
-        if (requestCode == PermissionManager.REQ_LOCATION_MULTI
-                || requestCode == PermissionManager.REQ_ACTIVITY) {
-            boolean anyGranted = false;
-            for (int r : grantResults) if (r == PackageManager.PERMISSION_GRANTED) { anyGranted = true; break; }
-            if (anyGranted) {
-                ensurePermsThenSense();
-            } else {
-                Toast.makeText(requireContext(), "Permissions needed for activity sensing", Toast.LENGTH_SHORT).show();
-            }
+        if (!hasLight && !hasWeather && !hasAct && !hasPlace && !hasImage) {
+            // Absolutely no context → inform and restore UI
+            requireActivity().runOnUiThread(() -> {
+                binding.loadingContainer.setVisibility(View.GONE);
+                binding.welcomeCard.setVisibility(View.VISIBLE);
+                binding.createVibeCard.setVisibility(View.VISIBLE);
+                binding.statsRow.setVisibility(View.VISIBLE);
+                binding.recentTitle.setVisibility(View.VISIBLE);
+                binding.recentItem.setVisibility(View.VISIBLE);
+                binding.btnGo.setEnabled(true);
+                binding.btnRegenerate.setEnabled(true);
+                Toast.makeText(requireContext(),
+                        "Not enough context. Enable sensors or add a photo.", Toast.LENGTH_LONG).show();
+            });
             return;
         }
 
-        // --- WEATHER / PLACES LOCATION (single fine location) ---
-        if (requestCode == PermissionManager.REQ_LOCATION) {
-            boolean granted = grantResults.length > 0
-                    && grantResults[0] == PackageManager.PERMISSION_GRANTED;
+        // 2) Proceed → AI stub (Context → search_query + reason) → Spotify
+        aiRecommender.getSearchRecommendation(ctx, new AIPlaylistRecommender.AICallback() {
+            @Override public void onSuccess(@NonNull SearchRecommendation rec) {
+                String query = (rec.searchQuery == null || rec.searchQuery.isEmpty())
+                        ? fallbackQuery(ctx)
+                        : rec.searchQuery;
+                runSpotify(query);
+            }
+            @Override public void onError(@NonNull Exception e) {
+                Log.e(TAG, "AI failed, fallback", e);
+                runSpotify(fallbackQuery(ctx));
+            }
+        });
+    }
 
-            if (!granted) {
-                if (pending == Pending.WEATHER) {
-                    updateWeatherStatus(WeatherState.UNKNOWN);
-                    Toast.makeText(requireContext(), "Location permission needed for weather", Toast.LENGTH_SHORT).show();
-                } else if (pending == Pending.PLACES) {
-                    Toast.makeText(requireContext(), "Location permission needed to fetch nearby places", Toast.LENGTH_SHORT).show();
+    private List<String> topImageLabelStrings(int n) {
+        List<String> out = new ArrayList<>();
+        if (currentImageLabels != null && currentImageLabels.getItems() != null) {
+            for (ImageLabels.LabelConfidence lc : currentImageLabels.getItems()) {
+                if (lc.getLabel() != null && !lc.getLabel().isEmpty()) {
+                    out.add(lc.getLabel());
+                    if (out.size() >= n) break;
                 }
-                pending = Pending.NONE;
-                return;
             }
+        }
+        return out;
+    }
 
-            // Granted → resume original intent
-            if (pending == Pending.WEATHER) {
-                fetchWeatherData();
-            } else if (pending == Pending.PLACES) {
-                locationSensor.getCurrentLocation(loc -> {
-                    if (loc == null) {
-                        requireActivity().runOnUiThread(() ->
-                                Toast.makeText(requireContext(), "Couldn't get location", Toast.LENGTH_SHORT).show());
-                    } else {
-                        fetchNearbyPlaces(loc);
-                    }
-                });
-            }
-            pending = Pending.NONE;
+    private void showLoading(boolean on) {
+        if (on) {
+            binding.welcomeCard.setVisibility(View.GONE);
+            binding.createVibeCard.setVisibility(View.GONE);
+            binding.currentMoodCard.setVisibility(View.GONE);
+            binding.regenerateCard.setVisibility(View.GONE);
+            binding.playlistSuggestionsSection.setVisibility(View.GONE);
+            binding.statsRow.setVisibility(View.GONE);
+            binding.recentTitle.setVisibility(View.GONE);
+            binding.recentItem.setVisibility(View.GONE);
+            binding.btnGo.setEnabled(false);
+            binding.btnRegenerate.setEnabled(false);
+            binding.loadingContainer.setVisibility(View.VISIBLE);
+        } else {
+            binding.loadingContainer.setVisibility(View.GONE);
+            binding.btnGo.setEnabled(true);
+            binding.btnRegenerate.setEnabled(true);
         }
     }
 
-    // ===================== SPOTIFY PLAYLIST GENERATION =====================
-    private void testSpotifyPlaylistSearch(String query) {
-        Log.d(TAG, "Starting playlist search for search key: " + query);
-
-        // Disable buttons
-        binding.btnGo.setEnabled(false);
-        if (playlistsGenerated) {
-            binding.btnRegenerate.setEnabled(false);
-        }
-
-        // HIDE EVERYTHING
-        binding.welcomeCard.setVisibility(View.GONE);
-        binding.createVibeCard.setVisibility(View.GONE);
-        binding.currentMoodCard.setVisibility(View.GONE);
-        binding.regenerateCard.setVisibility(View.GONE);
-        binding.playlistSuggestionsSection.setVisibility(View.GONE);
-        binding.statsRow.setVisibility(View.GONE);
-        binding.recentTitle.setVisibility(View.GONE);
-        binding.recentItem.setVisibility(View.GONE);
-        binding.btnFetchPlaces.setVisibility(View.GONE);
-
-        // Show loading
-        binding.loadingContainer.setVisibility(View.VISIBLE);
-
+    private void runSpotify(@NonNull String query) {
         spotifyAPI.searchPlaylists(query, 5, new SpotifyAPI.PlaylistCallback() {
             @Override
             public void onSuccess(List<SpotifyPlaylist> playlists) {
                 if (getActivity() == null) return;
-
                 requireActivity().runOnUiThread(() -> {
                     spotifyPlaylists = playlists;
                     playlistsGenerated = true;
@@ -557,51 +467,34 @@ public class HomeFragment extends Fragment {
                     binding.btnGo.setEnabled(true);
                     binding.btnRegenerate.setEnabled(true);
 
-                    // HIDE: welcome, create vibe, stats, recent activity
-                    binding.welcomeCard.setVisibility(View.GONE);
-                    binding.createVibeCard.setVisibility(View.GONE);
-                    binding.statsRow.setVisibility(View.GONE);
-                    binding.recentTitle.setVisibility(View.GONE);
-                    binding.recentItem.setVisibility(View.GONE);
-                    binding.btnFetchPlaces.setVisibility(View.GONE);
-
-                    // SHOW: current mood (centered), regenerate card, playlists
+                    // Show “after” state
                     binding.currentMoodCard.setVisibility(View.VISIBLE);
                     binding.regenerateCard.setVisibility(View.VISIBLE);
                     binding.playlistSuggestionsSection.setVisibility(View.VISIBLE);
 
-                    populateContextTags();
+                    populateContextChipsFor(lastContext != null ? lastContext : ctxFromLastKnown()); // render chips from last known
                     populateSpotifyPlaylistCards();
-
-                    // Inline empty state (no toast-only)
-                    binding.playlistEmptyText.setVisibility(
-                            playlists.isEmpty() ? View.VISIBLE : View.GONE
-                    );
+                    binding.playlistEmptyText.setVisibility(playlists.isEmpty() ? View.VISIBLE : View.GONE);
                 });
             }
 
+            @Override
             public void onError(String error) {
                 if (getActivity() == null) return;
-
                 requireActivity().runOnUiThread(() -> {
-                    Log.e(TAG, "Error occurred: " + error);
-
-                    // Hide loading
+                    Log.e(TAG, "Spotify error: " + error);
                     binding.loadingContainer.setVisibility(View.GONE);
                     binding.btnGo.setEnabled(true);
                     binding.btnRegenerate.setEnabled(true);
 
                     if (playlistsGenerated) {
-                        // Already had playlists - show AFTER generation state
                         binding.currentMoodCard.setVisibility(View.VISIBLE);
                         binding.regenerateCard.setVisibility(View.VISIBLE);
                         binding.playlistSuggestionsSection.setVisibility(View.VISIBLE);
-                        // Show inline error as empty state
                         binding.playlistCardsContainer.removeAllViews();
                         binding.playlistEmptyText.setText(getString(R.string.no_playlists_found));
                         binding.playlistEmptyText.setVisibility(View.VISIBLE);
                     } else {
-                        // First time error - show BEFORE generation state
                         binding.welcomeCard.setVisibility(View.VISIBLE);
                         binding.createVibeCard.setVisibility(View.VISIBLE);
                         binding.statsRow.setVisibility(View.VISIBLE);
@@ -613,6 +506,121 @@ public class HomeFragment extends Fragment {
             }
         });
     }
+
+    // Fallback query if AI fails or returns empty
+    private String fallbackQuery(@NonNull Context ctx) {
+        String tod = ctx.timeOfDay == null ? "" : ctx.timeOfDay.toLowerCase();
+        String wx  = ctx.weather == null ? "" : ctx.weather.name().toLowerCase();
+        String place = ctx.placeTag == null ? "" : ctx.placeTag.toLowerCase();
+        String act = ctx.activity == null ? "still" : ctx.activity.toLowerCase();
+
+        if ("gym".equals(place) || "running".equals(act)) return "gym 140 bpm";
+        if ("library".equals(place) || "office".equals(place)) return "instrumental focus";
+        if ("home".equals(place) && "evening".equals(tod)) return "evening chill acoustic";
+        if ("morning".equals(tod)) return "upbeat indie morning";
+        if ("rainy".equals(wx)) return "rainy day lo-fi";
+        return "chill pop";
+    }
+
+    // helper to keep chip rendering simple without changing binding points too much
+    private Context ctxFromLastKnown() {
+        String tod = computeTimeOfDay();
+        String act = (liveActivity != null && !liveActivity.isEmpty()) ? liveActivity : lastActivityLabel;
+        return new Context(currentLightBucket, tod, act, currentWeather, null, new ArrayList<>(), topImageLabelStrings(2));
+    }
+
+    // ===================== CONTEXT CHIPS =====================
+
+    private void populateContextChipsFor(@NonNull Context ctx) {
+        binding.contextTagsGroup.removeAllViews();
+
+        // activity
+        if (ctx.activity != null && !ctx.activity.isEmpty()) {
+            addContextChip(cap(ctx.activity));
+        }
+
+        // light
+        if (ctx.lightLevel != null && ctx.lightLevel != LightBucket.UNKNOWN) {
+            String lightText;
+            switch (ctx.lightLevel) {
+                case DIM:    lightText = "Dim";    break;
+                case NORMAL: lightText = "Normal"; break;
+                case BRIGHT: lightText = "Bright"; break;
+                default:     lightText = "Unknown";
+            }
+            addContextChip(lightText);
+        }
+
+        // weather
+        if (ctx.weather != null && ctx.weather != WeatherState.UNKNOWN) {
+            String w;
+            switch (ctx.weather) {
+                case SUNNY:  w = "Sunny"; break;
+                case CLOUDY: w = "Cloudy"; break;
+                case RAINY:  w = "Rainy";  break;
+                default:     w = null;
+            }
+            if (w != null) addContextChip(w);
+        }
+
+        // time
+        if (ctx.timeOfDay != null && !ctx.timeOfDay.isEmpty()) {
+            addContextChip(cap(ctx.timeOfDay));
+        }
+
+        // place tag or a couple of place types
+        if (ctx.placeTag != null) {
+            addContextChip(ctx.placeTag);
+        } else if (ctx.nearbyPlaceTypes != null && !ctx.nearbyPlaceTypes.isEmpty()) {
+            int n = Math.min(2, ctx.nearbyPlaceTypes.size());
+            for (int i = 0; i < n; i++) {
+                addContextChip(ctx.nearbyPlaceTypes.get(i));
+            }
+        }
+
+        // camera labels (top-2)
+        if (ctx.imageLabels != null && !ctx.imageLabels.isEmpty()) {
+            int n = Math.min(2, ctx.imageLabels.size());
+            for (int i = 0; i < n; i++) addContextChip(ctx.imageLabels.get(i));
+        }
+    }
+
+    private void addContextChip(String text) {
+        com.google.android.material.chip.Chip chip =
+                new com.google.android.material.chip.Chip(requireContext());
+        chip.setText(text);
+        chip.setChipBackgroundColor(android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#2D3748")));
+        chip.setTextColor(ContextCompat.getColor(requireContext(), R.color.text_primary));
+        chip.setClickable(false);
+        chip.setChipCornerRadius(24f);
+        binding.contextTagsGroup.addView(chip);
+    }
+
+    private String cap(String s) {
+        if (s == null || s.isEmpty()) return "";
+        return s.substring(0,1).toUpperCase(Locale.getDefault()) + s.substring(1);
+    }
+
+    private String computeTimeOfDay() {
+        try {
+            LocalTime now = LocalTime.now();
+            int h = now.getHour();
+            if (h >= 5 && h < 12)  return "morning";
+            if (h >= 12 && h < 17) return "afternoon";
+            if (h >= 17 && h < 22) return "evening";
+            return "night";
+        } catch (Throwable t) {
+            // Android < 26 without desugaring: fall back conservatively
+            java.util.Calendar c = java.util.Calendar.getInstance();
+            int h = c.get(java.util.Calendar.HOUR_OF_DAY);
+            if (h >= 5 && h < 12)  return "morning";
+            if (h >= 12 && h < 17) return "afternoon";
+            if (h >= 17 && h < 22) return "evening";
+            return "night";
+        }
+    }
+
+    // ===================== SPOTIFY RENDER =====================
 
     // Populate playlist cards based on current recommendations
     private void populateSpotifyPlaylistCards() {
@@ -666,6 +674,43 @@ public class HomeFragment extends Fragment {
 
             binding.playlistCardsContainer.addView(card);
         }
+    }
+
+    private void updateSaveButtonIcon(com.google.android.material.button.MaterialButton btnSave, boolean isSaved) {
+        if (isSaved) {
+            btnSave.setIconResource(com.comp90018.contexttunes.R.drawable.ic_saved);
+        } else {
+            btnSave.setIconResource(com.comp90018.contexttunes.R.drawable.ic_unsaved);
+        }
+    }
+
+    // ===================== PERMISSIONS =====================
+    private static final int REQ_NOTIFICATIONS = 2001;
+    private void ensureNotificationPermissionIfNeeded() {
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            if (ContextCompat.checkSelfPermission(
+                    requireContext(), android.Manifest.permission.POST_NOTIFICATIONS
+            ) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(
+                        new String[]{ android.Manifest.permission.POST_NOTIFICATIONS },
+                        REQ_NOTIFICATIONS
+                );
+            }
+        }
+    }
+
+    // permissions callback (weather only)
+    @Override public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions,
+                                                     @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == PermissionManager.REQ_LOCATION) {
+            boolean granted = grantResults.length > 0
+                    && grantResults[0] == PackageManager.PERMISSION_GRANTED;
+            if (granted) fetchWeatherData();
+            else updateWeatherStatus(WeatherService.WeatherState.UNKNOWN);
+        }
+        // Speed perms (REQ_LOCATION_MULTI / REQ_ACTIVITY) are requested,
+        // but we *don’t* immediately start sensing here; user taps GO again.
     }
 
     // ===================== LIFECYCLE =====================

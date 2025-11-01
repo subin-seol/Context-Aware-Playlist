@@ -8,7 +8,7 @@ import java.util.List;
 
 /**
  * Represents the user's current context derived from multiple sensors and APIs.
- * Used by both RuleEngine and AI inference for playlist recommendations.
+ * Used by the AI inference for playlist search string + reason.
  */
 public class Context {
     public final LightBucket lightLevel;
@@ -17,45 +17,50 @@ public class Context {
     public final WeatherState weather;
 
     // Location context
-    public final String placeTag;              // "Home", "Gym", "Library", null if not at tagged location
-    public final List<String> nearbyPlaceTypes; // ["gym", "park", "cafe"] from Google Places API
+    public final String placeTag;               // "Home", "Gym", "Library", null if not tagged
+    public final List<String> nearbyPlaceTypes; // e.g. ["gym", "park", "cafe"]
 
-    /**
-     * Full constructor with location data.
-     */
+    // Camera recognition (optional): top-N labels (strings only; confidences not required by AI)
+    public final List<String> imageLabels;      // e.g. ["Beach", "Bicycle", "Sunset"]
+
+    /** Full constructor with location + camera labels. */
     public Context(LightBucket lightLevel, String timeOfDay, String activity,
-                   WeatherState weather, String placeTag, List<String> nearbyPlaceTypes) {
+                   WeatherState weather, String placeTag, List<String> nearbyPlaceTypes,
+                   List<String> imageLabels) {
         this.lightLevel = lightLevel;
         this.timeOfDay = timeOfDay;
         this.activity = activity;
         this.weather = weather;
         this.placeTag = placeTag;
         this.nearbyPlaceTypes = nearbyPlaceTypes != null ? nearbyPlaceTypes : Collections.emptyList();
+        this.imageLabels = imageLabels != null ? imageLabels : Collections.emptyList();
     }
 
-    /**
-     * Backward-compatible constructor without location data.
-     * Used by existing RuleEngine code.
-     */
+    /** Backward-compatible constructor without location or camera labels. */
     public Context(LightBucket lightLevel, String timeOfDay, String activity, WeatherState weather) {
-        this(lightLevel, timeOfDay, activity, weather, null, Collections.emptyList());
+        this(lightLevel, timeOfDay, activity, weather, null, Collections.emptyList(), Collections.emptyList());
     }
 
-    /**
-     * Check if location context is available.
-     */
+    /** Convenience constructor without camera labels. */
+    public Context(LightBucket lightLevel, String timeOfDay, String activity,
+                   WeatherState weather, String placeTag, List<String> nearbyPlaceTypes) {
+        this(lightLevel, timeOfDay, activity, weather, placeTag, nearbyPlaceTypes, Collections.emptyList());
+    }
+
     public boolean hasLocationContext() {
         return placeTag != null || !nearbyPlaceTypes.isEmpty();
     }
 
-    /**
-     * Get a human-readable location summary.
-     */
+    public boolean hasImageContext() {
+        return imageLabels != null && !imageLabels.isEmpty();
+    }
+
     public String getLocationSummary() {
         if (placeTag != null) {
             return "at " + placeTag;
         } else if (!nearbyPlaceTypes.isEmpty()) {
-            return "near " + String.join(", ", nearbyPlaceTypes.subList(0, Math.min(3, nearbyPlaceTypes.size())));
+            int n = Math.min(3, nearbyPlaceTypes.size());
+            return "near " + String.join(", ", nearbyPlaceTypes.subList(0, n));
         } else {
             return "location unknown";
         }
