@@ -22,6 +22,7 @@ import com.comp90018.contexttunes.ui.snap.SnapFragment;
 public class MainActivity extends AppCompatActivity {
 
     private ActivityMainBinding binding;
+    private boolean navEnabled = true;
 
     // Light sensor instance
     private LightSensor lightSensor;
@@ -56,7 +57,8 @@ public class MainActivity extends AppCompatActivity {
 
         // Handle clicks
         // Defines behaviour when the user clicks on the bottom nav bar
-        binding.bottomNav.setOnItemSelectedListener(item ->{
+        binding.bottomNav.setOnItemSelectedListener(item -> {
+            if (!navEnabled) return false; // ignore taps while generating
             Fragment selectedFragment = null;
 
             // Handle navigation item clicks
@@ -75,9 +77,8 @@ public class MainActivity extends AppCompatActivity {
             if (selectedFragment != null){
                 getSupportFragmentManager().beginTransaction().replace(R.id.fragment_container,
                         selectedFragment).commit();
-                return true;
             }
-            return false;
+            return selectedFragment != null;
         });
 
         // Initialise LightSensor
@@ -102,6 +103,12 @@ public class MainActivity extends AppCompatActivity {
             binding.bottomNav.setVisibility(visible ? View.VISIBLE : View.GONE);
         }
     }
+
+    public void setBottomNavInteractionEnabled(boolean enabled) {
+        navEnabled = enabled;
+        if (binding != null) binding.bottomNav.setEnabled(enabled);
+    }
+
 
     public void goToHomeTab() {
         // This triggers the BottomNavigationView listener and loads HomeFragment

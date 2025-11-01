@@ -227,7 +227,7 @@ public class HomeFragment extends Fragment {
 
     private void beginWindow(int seconds) {
         // pre-UI → loading
-        showLoading(true);
+        onGenerationStart();
 
         // if user enabled “Accelerometer” in Settings, that’s our “speed pipeline” master toggle
         boolean speedEnabled = settingsManager.isAccelerometerEnabled();
@@ -328,6 +328,25 @@ public class HomeFragment extends Fragment {
             windowWatchdog = null;
         }
     }
+
+    private void onGenerationStart() {
+        showLoading(true);
+        if (getActivity() instanceof MainActivity) {
+            MainActivity a = (MainActivity) getActivity();
+            a.setBottomNavInteractionEnabled(false);
+            a.setBottomNavVisibility(false);
+        }
+    }
+
+    private void onGenerationEnd() {
+        if (getActivity() instanceof MainActivity) {
+            MainActivity a = (MainActivity) getActivity();
+            a.setBottomNavVisibility(true);
+            a.setBottomNavInteractionEnabled(true);
+        }
+        showLoading(false);
+    }
+
     // receive frames from SpeedSensorService
     private final BroadcastReceiver speedRx = new BroadcastReceiver() {
         @Override public void onReceive(android.content.Context ctx, Intent i) {
@@ -392,6 +411,7 @@ public class HomeFragment extends Fragment {
         if (!hasLight && !hasWeather && !hasAct && !hasPlace && !hasImage) {
             // Absolutely no context → inform and restore UI
             requireActivity().runOnUiThread(() -> {
+                onGenerationEnd();
                 binding.loadingContainer.setVisibility(View.GONE);
                 binding.welcomeCard.setVisibility(View.VISIBLE);
                 binding.createVibeCard.setVisibility(View.VISIBLE);
@@ -475,6 +495,7 @@ public class HomeFragment extends Fragment {
                     populateContextChipsFor(lastContext != null ? lastContext : ctxFromLastKnown()); // render chips from last known
                     populateSpotifyPlaylistCards();
                     binding.playlistEmptyText.setVisibility(playlists.isEmpty() ? View.VISIBLE : View.GONE);
+                    onGenerationEnd();
                 });
             }
 
@@ -494,12 +515,14 @@ public class HomeFragment extends Fragment {
                         binding.playlistCardsContainer.removeAllViews();
                         binding.playlistEmptyText.setText(getString(R.string.no_playlists_found));
                         binding.playlistEmptyText.setVisibility(View.VISIBLE);
+                        onGenerationEnd();
                     } else {
                         binding.welcomeCard.setVisibility(View.VISIBLE);
                         binding.createVibeCard.setVisibility(View.VISIBLE);
                         binding.statsRow.setVisibility(View.VISIBLE);
                         binding.recentTitle.setVisibility(View.VISIBLE);
                         binding.recentItem.setVisibility(View.VISIBLE);
+                        onGenerationEnd();
                         Toast.makeText(requireContext(), "Error fetching playlists. Try again.", Toast.LENGTH_SHORT).show();
                     }
                 });
@@ -738,6 +761,13 @@ public class HomeFragment extends Fragment {
 
     @Override
     public void onDestroyView() {
+        try {
+            if (getActivity() instanceof MainActivity) {
+                MainActivity a = (MainActivity) getActivity();
+                a.setBottomNavVisibility(true);
+                a.setBottomNavInteractionEnabled(true);
+            }
+        } catch (Exception ignored) {}
         if (mockWeatherService != null) {
             mockWeatherService.shutdown();
         }
