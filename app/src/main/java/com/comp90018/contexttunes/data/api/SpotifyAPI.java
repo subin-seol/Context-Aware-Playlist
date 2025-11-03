@@ -2,6 +2,7 @@ package com.comp90018.contexttunes.data.api;
 
 import android.os.Handler;
 import android.os.Looper;
+import android.util.Log;
 
 import com.comp90018.contexttunes.domain.SpotifyPlaylist;
 
@@ -42,6 +43,7 @@ public class SpotifyAPI {
     public void searchPlaylists(String query, int limit, PlaylistCallback callback) {
         executorService.execute(() -> {
             try {
+                Log.d("SpotifyAPI", "Searching playlists for query: " + query);
                 List<SpotifyPlaylist> playlists = performSearch(query, limit);
                 mainHandler.post(() -> callback.onSuccess(playlists));
             } catch (Exception e) {
@@ -58,6 +60,8 @@ public class SpotifyAPI {
         String urlString = BASE_URL + "?q=" + encodedQuery +
                 "&type=playlist&limit=" + limit;
 
+        Log.d("SpotifyAPI", "➡️ Request URL: " + urlString);
+
         URL url = new URL(urlString);
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod("GET");
@@ -67,6 +71,14 @@ public class SpotifyAPI {
         conn.setReadTimeout(10000);
 
         int responseCode = conn.getResponseCode();
+
+        // Log headers for debugging (status + a few key headers)
+        Log.d("SpotifyAPI", "⬅️ Status: " + responseCode);
+        for (String key : conn.getHeaderFields().keySet()) {
+            // key can be null for the status line
+            Log.d("SpotifyAPI", "Header: " + key + " = " + conn.getHeaderField(key));
+        }
+
         InputStream is = responseCode >= 400 ? conn.getErrorStream() : conn.getInputStream();
         if (is == null) {
             conn.disconnect();

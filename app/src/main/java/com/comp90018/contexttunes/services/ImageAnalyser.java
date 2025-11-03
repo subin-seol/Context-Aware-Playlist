@@ -14,6 +14,7 @@ import com.amazonaws.services.rekognition.model.Label;
 import com.comp90018.contexttunes.BuildConfig;
 import com.comp90018.contexttunes.data.viewModel.ImageViewModel;
 import com.comp90018.contexttunes.domain.ImageLabels;
+import com.comp90018.contexttunes.utils.ImageLabelsHasher;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
@@ -40,16 +41,27 @@ public class ImageAnalyser {
      *  3) post labels back into the VM when done.
      */
 
-    // Changed from requiring activity to just viewModel to decouple from UI
+    /** Cache-aware entry point. */
     public void analyzeImage(ImageViewModel viewModel) {
         Bitmap bitmap = viewModel.getCapturedImage().getValue();
-        if (bitmap != null) {
-            new Thread(() -> detectLabels(bitmap, viewModel)).start();
-        } else {
+        if (bitmap == null) {
             Log.w(TAG, "No image captured");
-            // Optionally notify observers with an empty labels object:
-            viewModel.postImageLabels(new ImageLabels());
+            viewModel.postImageLabels(new ImageLabels()); // signal "done" (empty)
+            return;
         }
+
+        // --- cache check: if labels already exist for this exact image, reuse and exit
+        ImageLabels existing = viewModel.getImageLabels().getValue();
+        String currentHash = ImageLabelsHasher.hash(bitmap);
+        if (existing != null && currentHash.equals(existing.getSourceHash())) {
+            Log.d(TAG, "Reusing cached labels for current image (hash hit).");
+            // No post needed; observers already have it. If you want to re-emit:
+            // viewModel.postImageLabels(existing);
+            return;
+        }
+
+        // else compute on a worker
+        new Thread(() -> detectLabels(bitmap, currentHash, viewModel)).start();
     }
 
     // Ensure client is initialized (thread-safe lazy init)
@@ -70,7 +82,7 @@ public class ImageAnalyser {
         return rekognitionClient;
     }
 
-    private void detectLabels(Bitmap bitmap, ImageViewModel viewModel) {
+    private void detectLabels(Bitmap bitmap, String sourceHash, ImageViewModel viewModel) {
         try {
             // Convert Bitmap to ByteBuffer
             ByteArrayOutputStream stream = new ByteArrayOutputStream();
@@ -78,6 +90,7 @@ public class ImageAnalyser {
             boolean ok = bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, stream);
             if (!ok) {
                 Log.e(TAG, "Bitmap.compress returned false");
+                viewModel.postImageLabels(new ImageLabels()); // still signal "done"
                 return;
             }
             byte[] imageBytes = stream.toByteArray();
@@ -93,34 +106,21 @@ public class ImageAnalyser {
             DetectLabelsResult result = getClient().detectLabels(request);
             List<Label> labels = result.getLabels();
 
-            // 4) Log + convert to our domain model
-            if (labels == null || labels.isEmpty()) {
-                Log.d(TAG, "No labels detected.");
-                // Still post an empty ImageLabels so observers know analysis finished
-                viewModel.postImageLabels(new ImageLabels());
-                return;
-            }
-
-            // Build human-readable description
-            StringBuilder description = new StringBuilder("Detected objects: ");
             ImageLabels imageLabels = new ImageLabels();
-            for (Label label : labels) {
-                // Use the helper
-                imageLabels.addLabel(label.getName(), label.getConfidence());
-                description.append(label.getName())
-                        .append(" (")
-                        .append(Math.round(label.getConfidence()))
-                        .append("%), ");
+            if (labels != null) {
+                for (Label l : labels) {
+                    imageLabels.addLabel(l.getName(), l.getConfidence());
+                }
             }
+            imageLabels.setSourceHash(sourceHash);
 
-            // Log and post to VM (bg-safe)
-            String finalDescription = description.toString();
-            Log.d(TAG, finalDescription);
-
+            Log.d(TAG, "Detected " + (labels == null ? 0 : labels.size()) + " labels; hash=" + sourceHash);
             viewModel.postImageLabels(imageLabels);
 
         } catch (Exception e) {
             Log.e(TAG, "Error analyzing image", e);
+            // Post an empty object so the pipeline can proceed
+            viewModel.postImageLabels(new ImageLabels());
         }
     }
 }

@@ -18,6 +18,7 @@ public class ImageViewModel extends ViewModel {
      */
     public void setCapturedImage(Bitmap bitmap) {
         capturedImage.setValue(bitmap);
+        imageLabels.setValue(null); // invalidate labels so Home knows to recompute
     }
 
     /**
