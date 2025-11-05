@@ -6,11 +6,6 @@
         android:title="Home" />
 
     <item
-        android:id="@+id/nav_snap"
-        android:icon="@drawable/camera"
-        android:title="Snap" />
-
-    <item
         android:id="@+id/nav_playlist"
         android:icon="@drawable/playlist"
         android:title="Playlists" />
