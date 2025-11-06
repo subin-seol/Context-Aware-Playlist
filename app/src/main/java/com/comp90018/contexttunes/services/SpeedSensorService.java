@@ -51,6 +51,7 @@ public class SpeedSensorService extends Service {
     private static final int    NOTIF_ID = 42;
 
     // ===== Window / pacing =====
+    private static final long MEASURE_WINDOW_MS = 10_000L;  // 10 seconds for now
     private static final long LOOP_TICK_MS      = 200L;    // internal loop cadence
     private static final long EMIT_PERIOD_MS    = 1_000L;  // throttle broadcasts to ~1Hz
 
@@ -141,16 +142,15 @@ public class SpeedSensorService extends Service {
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null && AppEvents.ACTION_SPEED_SAMPLE_NOW.equals(intent.getAction())) {
-            int sec = intent.getIntExtra(AppEvents.EXTRA_WINDOW_SECONDS, 20);
-            armNewWindow(sec);
+            armNewWindow();  // the method that resets state and starts the 20s window
         }
         return START_STICKY;
     }
 
-    private void armNewWindow(int seconds) {
-        long durationMs = Math.max(1, seconds) * 1000L;
+    private void armNewWindow() {
+        // Arm a fresh 20s window
         windowActive  = true;
-        windowEndMono = SystemClock.elapsedRealtime() + durationMs;
+        windowEndMono = SystemClock.elapsedRealtime() + MEASURE_WINDOW_MS;
 
         seq = 0; lastEmitWall = 0;
         lastLabel = "-"; lastLabelAt = 0L; wheelSince = 0L;
@@ -158,7 +158,7 @@ public class SpeedSensorService extends Service {
         stepSpeedKmh = 0f; gpsSpeedKmh = 0f; gpsGood = false; lastLoc = null;
 
         if (speedSensor != null) speedSensor.resetDebugCounts();
-        updateNotif("Measuring " + seconds + "s…");
+        updateNotif("Measuring 10s…");
         if (BuildConfig.DEBUG) Log.d(TAG, "Measuring window started");
     }
 

@@ -298,24 +298,211 @@
                 android:gravity="center"
                 android:visibility="gone"/>
 
-            <TextView
-                android:id="@+id/aiModeBadge"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="✨ Powered by AI"
-                android:textColor="@color/teal_accent"
-                android:textSize="12sp"
-                android:textStyle="bold"
-                android:layout_marginTop="4dp"
-                android:layout_marginBottom="@dimen/space_8"
-                android:visibility="gone" />
-
             <LinearLayout
                 android:id="@+id/playlistCardsContainer"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical" />
         </LinearLayout>
+
+
+
+        <!-- BEFORE: Recent Activity (hidden after generation) -->
+        <TextView
+            android:id="@+id/recentTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_24"
+            android:text="Recent Activity"
+            android:textColor="@color/text_primary"
+            android:textStyle="bold"
+            android:textSize="18sp" />
+
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/recentItem"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_12"
+            app:cardBackgroundColor="@color/card_dark"
+            app:cardCornerRadius="@dimen/radius_16"
+            app:cardElevation="@dimen/elev_2"
+            app:strokeColor="@android:color/transparent"
+            app:strokeWidth="0dp">
+
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="@dimen/space_16">
+
+
+                <TextView
+                    android:id="@+id/recentSubtitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="✨ Quick tools to match your vibe"
+                    android:textSize="14sp"
+                    android:textStyle="italic"
+                    android:textColor="@color/text_secondary"
+                    android:includeFontPadding="false" />
+
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginTop="@dimen/space_12">
+
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+
+                        <TextView
+                            android:id="@+id/senseSubtitle"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Sense your last 10s movement"
+                            android:textSize="12sp"
+                            android:textColor="@color/text_secondary"
+                            android:includeFontPadding="false" />
+
+
+                        <FrameLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="48dp"
+                            android:layout_marginTop="@dimen/space_8">
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnSenseTest"
+                                style="@style/Widget.MaterialComponents.Button"
+                                android:layout_width="wrap_content"
+                                android:layout_height="match_parent"
+                                android:text="SENSE"
+                                android:textAllCaps="true"
+                                app:cornerRadius="12dp" />
+
+                            <ProgressBar
+                                android:id="@+id/progressSense"
+                                style="?android:attr/progressBarStyleSmall"
+                                android:layout_width="24dp"
+                                android:layout_height="24dp"
+                                android:layout_gravity="center"
+                                android:visibility="gone" />
+                        </FrameLayout>
+
+
+                        <TextView
+                            android:id="@+id/recentTag"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/space_8"
+                            android:paddingLeft="@dimen/space_12"
+                            android:paddingRight="@dimen/space_12"
+                            android:paddingTop="@dimen/space_4"
+                            android:paddingBottom="@dimen/space_4"
+                            android:background="@color/chip_bg"
+                            android:text="Still"
+                            android:textColor="@color/text_primary"
+                            android:textSize="12sp"
+                            android:includeFontPadding="false" />
+                    </LinearLayout>
+
+
+                    <Space
+                        android:layout_width="@dimen/space_16"
+                        android:layout_height="0dp" />
+
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+
+                        <TextView
+                            android:id="@+id/fetchSubtitle"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Discover what’s around you"
+                            android:textSize="12sp"
+                            android:textColor="@color/text_secondary"
+                            android:includeFontPadding="false" />
+
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btn_fetch_places"
+                            style="@style/Widget.MaterialComponents.Button"
+                            android:layout_width="match_parent"
+                            android:layout_height="48dp"
+                            android:layout_marginTop="@dimen/space_8"
+                            android:text="FETCH"
+                            android:textAllCaps="true"
+                            app:cornerRadius="12dp" />
+
+
+                        <LinearLayout
+                            android:id="@+id/fetchPlacesRow"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:layout_marginTop="@dimen/space_8">
+
+                            <TextView
+                                android:id="@+id/placeTag1"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:paddingLeft="@dimen/space_12"
+                                android:paddingRight="@dimen/space_12"
+                                android:paddingTop="@dimen/space_4"
+                                android:paddingBottom="@dimen/space_4"
+                                android:background="@color/chip_bg"
+                                android:text="-"
+                                android:textColor="@color/text_primary"
+                                android:textSize="12sp"
+                                android:includeFontPadding="false" />
+
+                            <TextView
+                                android:id="@+id/placeTag2"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="@dimen/space_4"
+                                android:paddingLeft="@dimen/space_12"
+                                android:paddingRight="@dimen/space_12"
+                                android:paddingTop="@dimen/space_4"
+                                android:paddingBottom="@dimen/space_4"
+                                android:background="@color/chip_bg"
+                                android:text="-"
+                                android:textColor="@color/text_primary"
+                                android:textSize="12sp"
+                                android:includeFontPadding="false" />
+
+                            <TextView
+                                android:id="@+id/placeTag3"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="@dimen/space_4"
+                                android:paddingLeft="@dimen/space_12"
+                                android:paddingRight="@dimen/space_12"
+                                android:paddingTop="@dimen/space_4"
+                                android:paddingBottom="@dimen/space_4"
+                                android:background="@color/chip_bg"
+                                android:text="-"
+                                android:textColor="@color/text_primary"
+                                android:textSize="12sp"
+                                android:includeFontPadding="false" />
+                        </LinearLayout>
+                    </LinearLayout>
+                </LinearLayout>
+            </LinearLayout>
+
+        </com.google.android.material.card.MaterialCardView>
 
         <!-- BEFORE: Stats (hidden after generation) -->
         <LinearLayout
@@ -402,61 +589,6 @@
                     android:textSize="12sp"/>
             </LinearLayout>
         </LinearLayout>
-
-        <!-- BEFORE: Recent Activity (hidden after generation) -->
-        <TextView
-            android:id="@+id/recentTitle"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_24"
-            android:text="Recent Activity"
-            android:textColor="@color/text_primary"
-            android:textStyle="bold"
-            android:textSize="18sp" />
-
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/recentItem"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_12"
-            app:cardBackgroundColor="@color/card_dark"
-            app:cardCornerRadius="@dimen/radius_16"
-            app:cardElevation="@dimen/elev_2"
-            app:strokeColor="@android:color/transparent"
-            app:strokeWidth="0dp">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:padding="@dimen/space_16"
-                android:gravity="center_vertical">
-
-                <TextView
-                    android:id="@+id/recentName"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="Morning Walk Vibes"
-                    android:textColor="@color/text_primary"
-                    android:textSize="15sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:id="@+id/recentTag"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:paddingLeft="@dimen/space_12"
-                    android:paddingRight="@dimen/space_12"
-                    android:paddingTop="@dimen/space_4"
-                    android:paddingBottom="@dimen/space_4"
-                    android:background="@color/chip_bg"
-                    android:text="Walking"
-                    android:textColor="@color/text_primary"
-                    android:textSize="12sp"
-                    android:includeFontPadding="false"/>
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
 
         <!-- Loading Container -->
         <LinearLayout
