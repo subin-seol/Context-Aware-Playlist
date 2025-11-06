@@ -57,8 +57,7 @@ public class SpotifyAPI {
         List<SpotifyPlaylist> playlists = new ArrayList<>();
 
         String encodedQuery = URLEncoder.encode(query, "UTF-8");
-        String urlString = BASE_URL + "?q=" + encodedQuery +
-                "&type=album&limit=" + limit;
+        String urlString = BASE_URL + "?q=" + encodedQuery + "&type=playlist&limit=" + limit + "&market=AU";
 
         Log.d("SpotifyAPI", "➡️ Request URL: " + urlString);
 
@@ -93,44 +92,42 @@ public class SpotifyAPI {
 
             // Parse JSON response
             JSONObject jsonResponse = new JSONObject(response.toString());
-            JSONObject playlistsObj = jsonResponse.getJSONObject("albums");
+            JSONObject playlistsObj = jsonResponse.getJSONObject("playlists");
             JSONArray items = playlistsObj.getJSONArray("items");
 
             for (int i = 0; i < items.length(); i++) {
-                    // Check if item is null
-                    if (items.isNull(i)) {
-                        continue;
-                    }
+                // Check if item is null
+                if (items.isNull(i)) {
+                    continue;
+                }
 
-                    JSONObject item = items.getJSONObject(i);
+                JSONObject item = items.getJSONObject(i);
 
-                    String id = item.optString("id", "");
-                    String name = item.optString("name", "Unknown");
-                    String description = item.optString("description", "");
-                    String imageUrl = "";
+                String id = item.optString("id", "");
+                String name = item.optString("name", "Unknown");
+                String description = item.optString("description", "");
+                String imageUrl = "";
 
-                    JSONArray images = item.optJSONArray("images");
-                    if (images != null && images.length() > 0) {
-                        imageUrl = images.getJSONObject(0).optString("url", "");
-                    }
+                JSONArray images = item.optJSONArray("images");
+                if (images != null && images.length() > 0) {
+                    imageUrl = images.getJSONObject(0).optString("url", "");
+                }
 
-                    String ownerName = "Unknown";
-                    JSONArray artists = item.optJSONArray("artists");
-                    if (artists != null && artists.length() > 0) {
-                        JSONObject artist = artists.getJSONObject(0);
-                        ownerName = artist.optString("name", "Unknown");
-                    }
+                String ownerName = "Unknown";
+                JSONObject owner = item.optJSONObject("owner");
+                if (owner != null) ownerName = owner.optString("display_name", owner.optString("id", "Unknown"));
 
-                    int totalTracks = item.optInt("total_tracks", 0);
+                int totalTracks = 0;
+                JSONObject tracks = item.optJSONObject("tracks");
+                if (tracks != null) totalTracks = tracks.optInt("total", 0);
 
-                    String externalUrl = "";
-                    if (!item.isNull("external_urls")) {
-                        JSONObject urls = item.getJSONObject("external_urls");
-                        externalUrl = urls.optString("spotify", "");
-                    }
+                String externalUrl = "";
+                JSONObject urls = item.optJSONObject("external_urls");
+                if (urls != null) externalUrl = urls.optString("spotify", "");
 
-                    playlists.add(new SpotifyPlaylist(id, name, description, imageUrl,
-                            ownerName, totalTracks, externalUrl));
+                playlists.add(new SpotifyPlaylist(id, name, description, imageUrl,
+                        ownerName, totalTracks, externalUrl));
+
             }
         } finally {
             conn.disconnect();
