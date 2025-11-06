@@ -58,7 +58,7 @@ public class SpotifyAPI {
 
         String encodedQuery = URLEncoder.encode(query, "UTF-8");
         String urlString = BASE_URL + "?q=" + encodedQuery +
-                "&type=playlist&limit=" + limit;
+                "&type=album&limit=" + limit;
 
         Log.d("SpotifyAPI", "➡️ Request URL: " + urlString);
 
@@ -93,7 +93,7 @@ public class SpotifyAPI {
 
             // Parse JSON response
             JSONObject jsonResponse = new JSONObject(response.toString());
-            JSONObject playlistsObj = jsonResponse.getJSONObject("playlists");
+            JSONObject playlistsObj = jsonResponse.getJSONObject("albums");
             JSONArray items = playlistsObj.getJSONArray("items");
 
             for (int i = 0; i < items.length(); i++) {
@@ -115,16 +115,13 @@ public class SpotifyAPI {
                     }
 
                     String ownerName = "Unknown";
-                    if (!item.isNull("owner")) {
-                        JSONObject owner = item.getJSONObject("owner");
-                        ownerName = owner.optString("display_name", "Unknown");
+                    JSONArray artists = item.optJSONArray("artists");
+                    if (artists != null && artists.length() > 0) {
+                        JSONObject artist = artists.getJSONObject(0);
+                        ownerName = artist.optString("name", "Unknown");
                     }
 
-                    int totalTracks = 0;
-                    if (!item.isNull("tracks")) {
-                        JSONObject tracks = item.getJSONObject("tracks");
-                        totalTracks = tracks.optInt("total", 0);
-                    }
+                    int totalTracks = item.optInt("total_tracks", 0);
 
                     String externalUrl = "";
                     if (!item.isNull("external_urls")) {
