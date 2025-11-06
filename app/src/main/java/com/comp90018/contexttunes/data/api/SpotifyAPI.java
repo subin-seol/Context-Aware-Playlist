@@ -58,7 +58,7 @@ public class SpotifyAPI {
 
         String encodedQuery = URLEncoder.encode(query, "UTF-8");
         String urlString = BASE_URL + "?q=" + encodedQuery +
-                "&type=playlist&limit=" + limit;
+                "&type=album&limit=" + limit;
 
         Log.d("SpotifyAPI", "➡️ Request URL: " + urlString);
 
@@ -93,7 +93,7 @@ public class SpotifyAPI {
 
             // Parse JSON response
             JSONObject jsonResponse = new JSONObject(response.toString());
-            JSONObject playlistsObj = jsonResponse.getJSONObject("playlists");
+            JSONObject playlistsObj = jsonResponse.getJSONObject("albums");
             JSONArray items = playlistsObj.getJSONArray("items");
 
             for (int i = 0; i < items.length(); i++) {

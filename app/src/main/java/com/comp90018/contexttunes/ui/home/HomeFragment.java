@@ -46,6 +46,7 @@ import com.comp90018.contexttunes.domain.ImageLabels;
 import com.comp90018.contexttunes.services.SpeedSensorService;
 import com.comp90018.contexttunes.utils.AppEvents;
 import com.comp90018.contexttunes.utils.LocationContextHelper;
+import com.comp90018.contexttunes.data.viewModel.HomeStateViewModel;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -55,6 +56,7 @@ import java.util.Locale;
 public class HomeFragment extends Fragment {
     private static final String TAG = "HomeFragment";
     private static final int DEFAULT_WINDOW_SECONDS = 20;
+    private static final int SPOTIFY_LIMIT = 5;
 
     private FragmentHomeBinding binding;
     private SettingsManager settingsManager;
@@ -94,6 +96,8 @@ public class HomeFragment extends Fragment {
     // The exact context used for AI/Spotify (for chips)
     @Nullable private Context lastContext = null;
 
+    private HomeStateViewModel homeStateVM;
+
     // ===================== LIFECYCLE =====================
 
     @Nullable
@@ -110,6 +114,10 @@ public class HomeFragment extends Fragment {
 
         // Shared VM with SnapFragment: observe image + labels
         imageVM = new ViewModelProvider(requireActivity()).get(ImageViewModel.class);
+
+        // VM to hold Home state across navs
+        homeStateVM = new ViewModelProvider(requireActivity()).get(HomeStateViewModel.class);
+
         imageVM.getCapturedImage().observe(getViewLifecycleOwner(), bitmap -> {
             binding.btnSnap.setVisibility(bitmap != null ? View.GONE : View.VISIBLE);
             binding.btnPreviewImage.setVisibility(bitmap != null ? View.VISIBLE : View.GONE);
@@ -160,6 +168,62 @@ public class HomeFragment extends Fragment {
         // GO / Regenerate → run the 20s window + context + AI + Spotify
         binding.btnGo.setOnClickListener(v -> beginWindow(DEFAULT_WINDOW_SECONDS));
         binding.btnRegenerate.setOnClickListener(v -> beginWindow(DEFAULT_WINDOW_SECONDS));
+
+        // restore previously generated playlists/state when coming back from other tabs
+        homeStateVM.getPlaylists().observe(getViewLifecycleOwner(), pl -> {
+            if (pl == null) return;
+            spotifyPlaylists = pl;
+            if (!pl.isEmpty()) {
+                // Render playlists if the generated state is active
+                populateSpotifyPlaylistCards();
+            }
+        });
+        homeStateVM.getRecommendationsGenerated().observe(getViewLifecycleOwner(), isGen -> {
+            playlistsGenerated = Boolean.TRUE.equals(isGen);
+            applyUIStateForGeneration(playlistsGenerated);
+        });
+
+        // If we already had state (process restore without LiveData tick), apply it once
+        List<SpotifyPlaylist> existing = homeStateVM.getPlaylists().getValue();
+        Boolean wasGen = homeStateVM.getRecommendationsGenerated().getValue();
+        if (existing != null && !existing.isEmpty()) {
+            spotifyPlaylists = existing;
+            populateSpotifyPlaylistCards();
+        }
+        if (wasGen != null) {
+            playlistsGenerated = wasGen;
+            applyUIStateForGeneration(playlistsGenerated);
+        }
+    }
+
+    private void applyUIStateForGeneration(boolean generated) { // tiny helper
+        if (binding == null) return;
+        if (generated) {
+            binding.welcomeCard.setVisibility(View.GONE);
+            binding.createVibeCard.setVisibility(View.GONE);
+            binding.statsRow.setVisibility(View.GONE);
+            binding.recentTitle.setVisibility(View.GONE);
+            binding.recentItem.setVisibility(View.GONE);
+
+            binding.currentMoodCard.setVisibility(View.VISIBLE);
+            binding.regenerateCard.setVisibility(View.VISIBLE);
+            binding.playlistSuggestionsSection.setVisibility(View.VISIBLE);
+
+            // chips from last known (may rebuild on return)
+            populateContextChipsFor(lastContext != null ? lastContext : ctxFromLastKnown());
+            binding.playlistEmptyText.setVisibility(spotifyPlaylists.isEmpty() ? View.VISIBLE : View.GONE);
+        } else {
+            // before-generation state
+            binding.currentMoodCard.setVisibility(View.GONE);
+            binding.regenerateCard.setVisibility(View.GONE);
+            binding.playlistSuggestionsSection.setVisibility(View.GONE);
+
+            binding.welcomeCard.setVisibility(View.VISIBLE);
+            binding.createVibeCard.setVisibility(View.VISIBLE);
+            binding.statsRow.setVisibility(View.VISIBLE);
+            binding.recentTitle.setVisibility(View.VISIBLE);
+            binding.recentItem.setVisibility(View.VISIBLE);
+        }
     }
 
     // ===================== PERMISSION-GATED ACTIONS =====================
@@ -336,6 +400,9 @@ public class HomeFragment extends Fragment {
             a.setBottomNavInteractionEnabled(false);
             a.setBottomNavVisibility(false);
         }
+
+        // reset VM “generated” while we’re re-generating
+        homeStateVM.setRecommendationsGenerated(false);
     }
 
     private void onGenerationEnd() {
@@ -422,6 +489,7 @@ public class HomeFragment extends Fragment {
                 binding.btnRegenerate.setEnabled(true);
                 Toast.makeText(requireContext(),
                         "Not enough context. Enable sensors or add a photo.", Toast.LENGTH_LONG).show();
+                homeStateVM.setRecommendationsGenerated(false);
             });
             return;
         }
@@ -475,13 +543,17 @@ public class HomeFragment extends Fragment {
     }
 
     private void runSpotify(@NonNull String query) {
-        spotifyAPI.searchPlaylists(query, 5, new SpotifyAPI.PlaylistCallback() {
+        spotifyAPI.searchPlaylists(query, SPOTIFY_LIMIT, new SpotifyAPI.PlaylistCallback() {
             @Override
             public void onSuccess(List<SpotifyPlaylist> playlists) {
                 if (getActivity() == null) return;
                 requireActivity().runOnUiThread(() -> {
                     spotifyPlaylists = playlists;
                     playlistsGenerated = true;
+
+                    // persist data + generated flag
+                    homeStateVM.setPlaylists(playlists);
+                    homeStateVM.setRecommendationsGenerated(true);
 
                     binding.loadingContainer.setVisibility(View.GONE);
                     binding.btnGo.setEnabled(true);
@@ -524,6 +596,7 @@ public class HomeFragment extends Fragment {
                         binding.recentItem.setVisibility(View.VISIBLE);
                         onGenerationEnd();
                         Toast.makeText(requireContext(), "Error fetching playlists. Try again.", Toast.LENGTH_SHORT).show();
+                        homeStateVM.setRecommendationsGenerated(false);
                     }
                 });
             }
