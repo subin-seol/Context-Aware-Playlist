@@ -54,19 +54,29 @@ public class SettingsFragment extends Fragment {
         locationSensor = new LocationSensor(requireContext());
 
         if (savedInstanceState != null) {
-            pendingLocationTag = savedInstanceState.getString("pendingLocationTag", null);
+            pendingLocationTag = savedInstanceState.getString(KEY_PENDING_TAG, null);
         }
 
         // Load saved settings
         loadSettings();
 
         // Setup listeners
-        setupDetectionModeListeners();
+        setupAIModeListener();
         setupSensorToggleListeners();   // preferances only, no OS prompts here
         setupLocationTaggingListeners();    // point-of-use permission here
         setupNotificationListeners();
-        setupAccountListeners();
 
+    }
+
+    private void setupAIModeListener() {
+        binding.switchAiMode.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            settingsManager.setAIMode(isChecked);
+            android.widget.Toast.makeText(
+                    requireContext(),
+                    "AI mode " + (isChecked ? "enabled" : "disabled"),
+                    android.widget.Toast.LENGTH_SHORT
+            ).show();
+        });
     }
 
     @Override
@@ -81,10 +91,7 @@ public class SettingsFragment extends Fragment {
      * Load all saved settings from SharedPreferences and update UI
      */
     private void loadSettings() {
-        // Detection Mode
-        boolean isPassive = settingsManager.isPassiveMode();
-        binding.switchPassive.setChecked(isPassive);
-        binding.switchActive.setChecked(!isPassive);
+
 
         // Sensor "allowed" prefs
         binding.switchLocation.setChecked(settingsManager.isLocationEnabled());
@@ -104,41 +111,6 @@ public class SettingsFragment extends Fragment {
 
     }
 
-    /**
-     * Setup Detection Mode toggle listeners.
-     * Only one mode can be active at a time (Passive or Active).
-     */
-    private void setupDetectionModeListeners() {
-        binding.switchPassive.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            if (isChecked) {
-                binding.switchActive.setChecked(false);
-                settingsManager.setDetectionMode(true); // true = passive
-                Toast.makeText(requireContext(), "Passive mode enabled", Toast.LENGTH_SHORT).show();
-            } else if (!binding.switchActive.isChecked()) {
-                // If unchecking passive and active is also off, turn active back on
-                binding.switchActive.setChecked(true);
-            }
-        });
-
-        binding.switchActive.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            if (isChecked) {
-                binding.switchPassive.setChecked(false);
-                settingsManager.setDetectionMode(false); // false = active
-                Toast.makeText(requireContext(), "Active mode enabled", Toast.LENGTH_SHORT).show();
-            } else if (!binding.switchPassive.isChecked()) {
-                // If unchecking active and passive is also off, turn passive back on
-                binding.switchPassive.setChecked(true);
-            }
-        });
-
-        // AI Mode Toggle
-        binding.switchAiMode.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            settingsManager.setAIMode(isChecked);
-            Toast.makeText(requireContext(),
-                    "AI mode " + (isChecked ? "enabled" : "disabled"),
-                    Toast.LENGTH_SHORT).show();
-        });
-    }
 
     /**
      * Sensor toggles: store preference only.
@@ -218,9 +190,9 @@ public class SettingsFragment extends Fragment {
             return;
         }
 
-        if (!PermissionManager.hasLocationPermission(requireContext())) {
+        if (!PermissionManager.hasAnyLocation(requireContext())) {
             pendingLocationTag = tag;
-            PermissionManager.requestLocation(this);
+            PermissionManager.requestLocationFineAndCoarse(this);
             return;
         }
 
@@ -318,22 +290,7 @@ public class SettingsFragment extends Fragment {
         });
     }
 
-    /**
-     * Setup Account section listeners
-     */
-    private void setupAccountListeners() {
-        binding.btnSpotifyConnection.setOnClickListener(v -> {
-            Toast.makeText(requireContext(),
-                    "Spotify connection management coming soon!",
-                    Toast.LENGTH_SHORT).show();
-        });
 
-        binding.btnSignOut.setOnClickListener(v -> {
-            Toast.makeText(requireContext(),
-                    "Sign out functionality coming soon!",
-                    Toast.LENGTH_SHORT).show();
-        });
-    }
 
     // --- Permission callback (resume pending tag) ---
     @Override

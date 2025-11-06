@@ -253,10 +253,10 @@ public class HomeFragment extends Fragment {
     }
 
     private void ensureLocationAndFetchWeather(boolean showToast) {
-        if (PermissionManager.hasLocationPermission(requireContext())) {
+        if (PermissionManager.hasAnyLocation(requireContext())) {
             fetchWeatherData(showToast);
         } else {
-            PermissionManager.requestLocation(this);
+            PermissionManager.requestLocationFineAndCoarse(this);
         }
     }
 
@@ -510,6 +510,11 @@ public class HomeFragment extends Fragment {
                         "Not enough context. Enable sensors or add a photo.", Toast.LENGTH_LONG).show();
                 homeStateVM.setRecommendationsGenerated(false);
             });
+            return;
+        }
+
+        if (!settingsManager.isAIMode()) {
+            runSpotify(fallbackQuery(ctx));   // skip AI, deterministic fallback
             return;
         }
 

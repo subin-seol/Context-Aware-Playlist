@@ -33,6 +33,8 @@ public class SettingsManager {
     private static final String KEY_PLAYLIST_SUGGESTIONS = "playlist_suggestions";
     private static final String KEY_CONTEXT_CHANGES = "context_changes";
 
+    private static final String KEY_AI_MODE = "ai_mode";
+
     private final SharedPreferences prefs;
 
     public SettingsManager(Context context) {
@@ -40,15 +42,6 @@ public class SettingsManager {
                 .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
     }
 
-    // ===== Detection Mode =====
-
-    public void setDetectionMode(boolean isPassive) {
-        prefs.edit().putString(KEY_DETECTION_MODE, isPassive ? MODE_PASSIVE : MODE_ACTIVE).apply();
-    }
-
-    public boolean isPassiveMode() {
-        return MODE_PASSIVE.equals(prefs.getString(KEY_DETECTION_MODE, MODE_ACTIVE));
-    }
 
     // ===== Sensor Permissions =====
 
@@ -193,7 +186,7 @@ public class SettingsManager {
 
     // ===== AI Mode =====
 
-    private static final String KEY_AI_MODE = "ai_mode";
+
 
     public void setAIMode(boolean enabled) {
         prefs.edit().putBoolean(KEY_AI_MODE, enabled).apply();
