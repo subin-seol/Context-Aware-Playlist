@@ -60,6 +60,8 @@ dependencies {
     implementation("com.google.code.gson:gson:2.10.1")
     implementation("com.amazonaws:aws-android-sdk-core:2.54.0")
     implementation("com.amazonaws:aws-android-sdk-rekognition:2.54.0")
+    // HTTP client for OpenAI API
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }
 
 secrets {

@@ -66,6 +66,7 @@ public class SettingsFragment extends Fragment {
         setupLocationTaggingListeners();    // point-of-use permission here
         setupNotificationListeners();
         setupAccountListeners();
+
     }
 
     @Override
@@ -98,6 +99,9 @@ public class SettingsFragment extends Fragment {
         // Button visual state + enabled/disabled depending on Location toggle
         updateLocationTagButtons();
         updateTaggingEnabledState();
+        // AI mode
+        binding.switchAiMode.setChecked(settingsManager.isAIMode());
+
     }
 
     /**
@@ -125,6 +129,14 @@ public class SettingsFragment extends Fragment {
                 // If unchecking active and passive is also off, turn passive back on
                 binding.switchPassive.setChecked(true);
             }
+        });
+
+        // AI Mode Toggle
+        binding.switchAiMode.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            settingsManager.setAIMode(isChecked);
+            Toast.makeText(requireContext(),
+                    "AI mode " + (isChecked ? "enabled" : "disabled"),
+                    Toast.LENGTH_SHORT).show();
         });
     }
 

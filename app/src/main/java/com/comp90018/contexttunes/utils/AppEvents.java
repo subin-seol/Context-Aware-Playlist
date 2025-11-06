@@ -29,6 +29,9 @@ public final class AppEvents {
     public static final String ACTION_SPEED_SAMPLE_NOW =
             "com.comp90018.contexttunes.ACTION_SPEED_SAMPLE_NOW";
 
+    // Window config
+    public static final String EXTRA_WINDOW_SECONDS = "window_seconds";
+
     // ===== Extras =====
     /**
      * float (km/h). Prefer this in UI.
