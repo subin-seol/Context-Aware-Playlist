@@ -1,6 +1,10 @@
 package com.comp90018.contexttunes.ui.home;
 
+import android.content.BroadcastReceiver;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.LayoutInflater;
@@ -9,10 +13,6 @@ import android.view.ViewGroup;
 import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
-import android.content.BroadcastReceiver;
-import android.content.Intent;
-import android.content.IntentFilter;
-import android.graphics.Bitmap;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -25,31 +25,31 @@ import com.bumptech.glide.Glide;
 import com.comp90018.contexttunes.BuildConfig;
 import com.comp90018.contexttunes.MainActivity;
 import com.comp90018.contexttunes.R;
-import com.comp90018.contexttunes.domain.AIPlaylistRecommender;
+import com.comp90018.contexttunes.data.api.SpotifyAPI;
 import com.comp90018.contexttunes.data.sensors.LightSensor;
 import com.comp90018.contexttunes.data.sensors.LightSensor.LightBucket;
 import com.comp90018.contexttunes.data.sensors.LocationSensor;
-import com.comp90018.contexttunes.data.weather.MockWeatherService;
+import com.comp90018.contexttunes.data.viewModel.HomeStateViewModel;
+import com.comp90018.contexttunes.data.viewModel.ImageViewModel;
 import com.comp90018.contexttunes.data.weather.WeatherService;
 import com.comp90018.contexttunes.data.weather.WeatherService.WeatherState;
 import com.comp90018.contexttunes.databinding.FragmentHomeBinding;
+import com.comp90018.contexttunes.domain.AIPlaylistRecommender;
 import com.comp90018.contexttunes.domain.Context;
+import com.comp90018.contexttunes.domain.ImageLabels;
 import com.comp90018.contexttunes.domain.SearchRecommendation;
-import com.comp90018.contexttunes.data.viewModel.ImageViewModel;
-import com.comp90018.contexttunes.data.api.SpotifyAPI;
 import com.comp90018.contexttunes.domain.SpotifyPlaylist;
+import com.comp90018.contexttunes.services.SpeedSensorService;
+import com.comp90018.contexttunes.utils.AppEvents;
+import com.comp90018.contexttunes.utils.LocationContextHelper;
 import com.comp90018.contexttunes.utils.PermissionManager;
 import com.comp90018.contexttunes.utils.PlaylistOpener;
 import com.comp90018.contexttunes.utils.SavedPlaylistsManager;
 import com.comp90018.contexttunes.utils.SettingsManager;
-import com.comp90018.contexttunes.domain.ImageLabels;
-import com.comp90018.contexttunes.services.SpeedSensorService;
-import com.comp90018.contexttunes.utils.AppEvents;
-import com.comp90018.contexttunes.utils.LocationContextHelper;
 
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.time.LocalTime;
 import java.util.Locale;
 
 public class HomeFragment extends Fragment {
@@ -63,7 +63,11 @@ public class HomeFragment extends Fragment {
     private LocationContextHelper locationHelper;
     private AIPlaylistRecommender aiRecommender;
     private SpotifyAPI spotifyAPI;
-    private MockWeatherService mockWeatherService;
+    private WeatherService weatherService;
+
+    // ViewModels
+    private HomeStateViewModel homeStateVM;
+    private ImageViewModel imageVM;
 
     private WeatherState currentWeather = WeatherState.UNKNOWN;
     private LightBucket currentLightBucket = LightBucket.UNKNOWN;
@@ -74,11 +78,10 @@ public class HomeFragment extends Fragment {
     // ---- window coordination (speed + labels) ----
     private volatile boolean speedReady  = false;
     private volatile boolean labelsReady = false;
-    private static final int LABELS_TIMEOUT_MS = 8000; // hard stop for Rekognition
+    private static final int LABELS_TIMEOUT_MS = 8000;
     @Nullable private Runnable windowWatchdog = null;
 
-
-    // live values from SpeedSensorService (if running)
+    // live values from SpeedSensorService
     @Nullable private Float  liveSpeedKmh   = null;
     @Nullable private Float  liveCadenceSpm = null;
     @Nullable private String liveActivity   = null;
@@ -86,11 +89,7 @@ public class HomeFragment extends Fragment {
 
     // camera labels
     @Nullable private ImageLabels currentImageLabels = null;
-    private ImageViewModel imageVM;
 
-    // state
-    private List<SpotifyPlaylist> spotifyPlaylists = new ArrayList<>();
-    private boolean playlistsGenerated = false;
     // The exact context used for AI/Spotify (for chips)
     @Nullable private Context lastContext = null;
 
@@ -108,22 +107,57 @@ public class HomeFragment extends Fragment {
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
 
-        // Shared VM with SnapFragment: observe image + labels
+        // Initialize ViewModels (scoped to Activity so they survive fragment recreation)
+        homeStateVM = new ViewModelProvider(requireActivity()).get(HomeStateViewModel.class);
         imageVM = new ViewModelProvider(requireActivity()).get(ImageViewModel.class);
+
+        // Observe image state from ImageViewModel
         imageVM.getCapturedImage().observe(getViewLifecycleOwner(), bitmap -> {
             binding.btnSnap.setVisibility(bitmap != null ? View.GONE : View.VISIBLE);
             binding.btnPreviewImage.setVisibility(bitmap != null ? View.VISIBLE : View.GONE);
         });
 
         imageVM.getImageLabels().observe(getViewLifecycleOwner(), labels -> {
-            currentImageLabels = labels; // keep latest labels for context & chips
+            currentImageLabels = labels;
+        });
+
+        // Observe playlist state from HomeStateViewModel
+        homeStateVM.getPlaylists().observe(getViewLifecycleOwner(), playlists -> {
+            if (playlists != null && !playlists.isEmpty()) {
+                populateSpotifyPlaylistCards(playlists);
+                binding.playlistEmptyText.setVisibility(View.GONE);
+            }
+        });
+
+        // Observe recommendations generated state
+        homeStateVM.getRecommendationsGenerated().observe(getViewLifecycleOwner(), generated -> {
+            if (generated != null && generated) {
+                // Show "after generation" UI state
+                binding.welcomeCard.setVisibility(View.GONE);
+                binding.createVibeCard.setVisibility(View.GONE);
+                binding.currentMoodCard.setVisibility(View.VISIBLE);
+                binding.regenerateCard.setVisibility(View.VISIBLE);
+                binding.playlistSuggestionsSection.setVisibility(View.VISIBLE);
+
+                // Restore context chips if we have lastContext stored
+                if (lastContext != null) {
+                    populateContextChipsFor(lastContext);
+                }
+            } else {
+                // Show "before generation" UI state
+                binding.welcomeCard.setVisibility(View.VISIBLE);
+                binding.createVibeCard.setVisibility(View.VISIBLE);
+                binding.currentMoodCard.setVisibility(View.GONE);
+                binding.regenerateCard.setVisibility(View.GONE);
+                binding.playlistSuggestionsSection.setVisibility(View.GONE);
+            }
         });
 
         // init services/settings
         settingsManager   = new SettingsManager(requireContext());
         locationSensor    = new LocationSensor(requireContext());
         locationHelper    = new LocationContextHelper(requireContext());
-        mockWeatherService= new MockWeatherService(requireContext());
+        weatherService    = new WeatherService(requireContext());
         aiRecommender     = new AIPlaylistRecommender();
         spotifyAPI        = new SpotifyAPI(BuildConfig.SPOTIFY_ACCESS_TOKEN);
 
@@ -145,8 +179,7 @@ public class HomeFragment extends Fragment {
             });
         }
 
-        // ---- WEATHER (point-of-use permission) ----
-        // Only fetch weather if location is allowed in Settings (even though mock doesn’t use it yet)
+        // WEATHER
         if (settingsManager.isLocationEnabled()) {
             ensureLocationAndFetchWeather();
         } else {
@@ -157,14 +190,13 @@ public class HomeFragment extends Fragment {
         binding.btnSnap.setOnClickListener(v -> ((MainActivity) requireActivity()).openSnap());
         binding.btnPreviewImage.setOnClickListener(v -> ((MainActivity) requireActivity()).openSnap());
 
-        // GO / Regenerate → run the 20s window + context + AI + Spotify
+        // GO / Regenerate
         binding.btnGo.setOnClickListener(v -> beginWindow(DEFAULT_WINDOW_SECONDS));
         binding.btnRegenerate.setOnClickListener(v -> beginWindow(DEFAULT_WINDOW_SECONDS));
     }
 
     // ===================== PERMISSION-GATED ACTIONS =====================
 
-    /** Weather: request permission if needed, then fetch. */
     private void ensureLocationAndFetchWeather() {
         if (PermissionManager.hasLocationPermission(requireContext())) {
             fetchWeatherData();
@@ -173,14 +205,12 @@ public class HomeFragment extends Fragment {
         }
     }
 
-
     // ===================== WEATHER + LIGHT UI =====================
 
     private void fetchWeatherData() {
         Toast.makeText(requireContext(), "Fetching weather data...", Toast.LENGTH_SHORT).show();
 
-        // Mock: convert mock enum to WeatherService enum (kept as-is)
-        mockWeatherService.getCurrentWeather(mockWeather -> {
+        weatherService.getCurrentWeather(mockWeather -> {
             WeatherService.WeatherState converted;
             switch (mockWeather) {
                 case SUNNY:  converted = WeatherService.WeatherState.SUNNY;  break;
@@ -226,28 +256,22 @@ public class HomeFragment extends Fragment {
     // ===================== FIXED 20s WINDOW PIPELINE =====================
 
     private void beginWindow(int seconds) {
-        // pre-UI → loading
         onGenerationStart();
 
-        // if user enabled “Accelerometer” in Settings, that’s our “speed pipeline” master toggle
         boolean speedEnabled = settingsManager.isAccelerometerEnabled();
         boolean hasAR = PermissionManager.hasActivityRecognition(requireContext());
         boolean hasAnyLoc = PermissionManager.hasAnyLocation(requireContext());
 
         if (speedEnabled && hasAR && hasAnyLoc) {
-            startSpeedWindow(seconds); // service will emit FINAL on time
+            startSpeedWindow(seconds);
         } else if (speedEnabled && (!hasAR || !hasAnyLoc)) {
-            // ask once at point-of-use; user can grant and tap GO again
             PermissionManager.requestSpeedSensing(this);
         }
 
-        // reset join state every run
-        speedReady = !settingsManager.isAccelerometerEnabled(); // if speed disabled, treat as ready
-        labelsReady = true; // default true; we’ll set false only if we actually need to run analysis
+        speedReady = !settingsManager.isAccelerometerEnabled();
+        labelsReady = true;
 
         maybeStartImageLabelsWork();
-
-        // Regardless, we arm the same-duration watchdog → single source of truth UX
         armWatchdog(seconds);
     }
 
@@ -255,22 +279,18 @@ public class HomeFragment extends Fragment {
         Bitmap img = imageVM.getCapturedImage().getValue();
         ImageLabels labels = imageVM.getImageLabels().getValue();
 
-        // If no image, nothing to do
         if (img == null) {
             labelsReady = true;
             return;
         }
 
-        // If labels already exist for the CURRENT image (cache hit), done.
         if (labels != null && labels.matchesCurrentImage(img)) {
             labelsReady = true;
             return;
         }
 
-        // We need to (re)generate labels.
         labelsReady = false;
 
-        // Run analyser (AWS Rekognition) with a timeout guard.
         final android.os.Handler h = new android.os.Handler(android.os.Looper.getMainLooper());
         final Runnable timeout = () -> {
             if (!labelsReady) {
@@ -281,7 +301,6 @@ public class HomeFragment extends Fragment {
         };
         h.postDelayed(timeout, LABELS_TIMEOUT_MS);
 
-        // Observe a single update, then remove observer
         imageVM.getImageLabels().observe(getViewLifecycleOwner(), newLabels -> {
             if (newLabels != null && newLabels.matchesCurrentImage(img)) {
                 labelsReady = true;
@@ -291,9 +310,8 @@ public class HomeFragment extends Fragment {
             }
         });
 
-        // Fire analysis (non-blocking). (Uses the same instance as Snap’s button)
         new com.comp90018.contexttunes.services.ImageAnalyser(requireContext())
-                .analyzeImage(imageVM);   // This posts into imageVM on completion
+                .analyzeImage(imageVM);
     }
 
     private void startSpeedWindow(int seconds) {
@@ -306,12 +324,11 @@ public class HomeFragment extends Fragment {
     private void armWatchdog(int seconds) {
         cancelWatchdog();
         windowWatchdog = () -> {
-            // service may not have sent FINAL yet; we use last known
             if (liveActivity != null && !liveActivity.isEmpty()) lastActivityLabel = liveActivity;
-            speedReady = true; // stop waiting on speed
+            speedReady = true;
             tryProceedIfAllReady();
         };
-        handler.postDelayed(windowWatchdog, (seconds + 2) * 1000L); // +2s slack
+        handler.postDelayed(windowWatchdog, (seconds + 2) * 1000L);
     }
 
     private void tryProceedIfAllReady() {
@@ -347,7 +364,6 @@ public class HomeFragment extends Fragment {
         showLoading(false);
     }
 
-    // receive frames from SpeedSensorService
     private final BroadcastReceiver speedRx = new BroadcastReceiver() {
         @Override public void onReceive(android.content.Context ctx, Intent i) {
             if (!AppEvents.ACTION_SPEED_UPDATE.equals(i.getAction())) return;
@@ -387,7 +403,6 @@ public class HomeFragment extends Fragment {
 
     private void buildContextAndProceed(String timeOfDay, String activity,
                                         @Nullable String placeTag, @Nullable List<String> nearbyTypes) {
-        // Extract top-N image labels (strings only) from VM
         List<String> img = topImageLabelStrings(3);
 
         Context ctx = new Context(
@@ -399,9 +414,8 @@ public class HomeFragment extends Fragment {
     }
 
     private void proceedWithContext(@NonNull Context ctx) {
-        lastContext = ctx; // store the exact context for chips rendering
+        lastContext = ctx;
 
-        // 1) Decide if we have ANY context at all
         boolean hasLight   = (ctx.lightLevel != null && ctx.lightLevel != LightBucket.UNKNOWN);
         boolean hasWeather = (ctx.weather != null && ctx.weather != WeatherState.UNKNOWN);
         boolean hasAct     = (ctx.activity != null && !ctx.activity.trim().isEmpty());
@@ -409,15 +423,11 @@ public class HomeFragment extends Fragment {
         boolean hasImage   = (ctx.imageLabels != null && !ctx.imageLabels.isEmpty());
 
         if (!hasLight && !hasWeather && !hasAct && !hasPlace && !hasImage) {
-            // Absolutely no context → inform and restore UI
             requireActivity().runOnUiThread(() -> {
                 onGenerationEnd();
                 binding.loadingContainer.setVisibility(View.GONE);
                 binding.welcomeCard.setVisibility(View.VISIBLE);
                 binding.createVibeCard.setVisibility(View.VISIBLE);
-                binding.statsRow.setVisibility(View.VISIBLE);
-                binding.recentTitle.setVisibility(View.VISIBLE);
-                binding.recentItem.setVisibility(View.VISIBLE);
                 binding.btnGo.setEnabled(true);
                 binding.btnRegenerate.setEnabled(true);
                 Toast.makeText(requireContext(),
@@ -426,7 +436,6 @@ public class HomeFragment extends Fragment {
             return;
         }
 
-        // 2) Proceed → AI stub (Context → search_query + reason) → Spotify
         aiRecommender.getSearchRecommendation(ctx, new AIPlaylistRecommender.AICallback() {
             @Override public void onSuccess(@NonNull SearchRecommendation rec) {
                 String query = (rec.searchQuery == null || rec.searchQuery.isEmpty())
@@ -461,9 +470,6 @@ public class HomeFragment extends Fragment {
             binding.currentMoodCard.setVisibility(View.GONE);
             binding.regenerateCard.setVisibility(View.GONE);
             binding.playlistSuggestionsSection.setVisibility(View.GONE);
-            binding.statsRow.setVisibility(View.GONE);
-            binding.recentTitle.setVisibility(View.GONE);
-            binding.recentItem.setVisibility(View.GONE);
             binding.btnGo.setEnabled(false);
             binding.btnRegenerate.setEnabled(false);
             binding.loadingContainer.setVisibility(View.VISIBLE);
@@ -480,20 +486,16 @@ public class HomeFragment extends Fragment {
             public void onSuccess(List<SpotifyPlaylist> playlists) {
                 if (getActivity() == null) return;
                 requireActivity().runOnUiThread(() -> {
-                    spotifyPlaylists = playlists;
-                    playlistsGenerated = true;
+                    // Update ViewModel instead of local state
+                    homeStateVM.setPlaylists(playlists);
+                    homeStateVM.setRecommendationsGenerated(true);
 
                     binding.loadingContainer.setVisibility(View.GONE);
                     binding.btnGo.setEnabled(true);
                     binding.btnRegenerate.setEnabled(true);
 
-                    // Show “after” state
-                    binding.currentMoodCard.setVisibility(View.VISIBLE);
-                    binding.regenerateCard.setVisibility(View.VISIBLE);
-                    binding.playlistSuggestionsSection.setVisibility(View.VISIBLE);
-
-                    populateContextChipsFor(lastContext != null ? lastContext : ctxFromLastKnown()); // render chips from last known
-                    populateSpotifyPlaylistCards();
+                    // UI updates now handled by observers
+                    populateContextChipsFor(lastContext != null ? lastContext : ctxFromLastKnown());
                     binding.playlistEmptyText.setVisibility(playlists.isEmpty() ? View.VISIBLE : View.GONE);
                     onGenerationEnd();
                 });
@@ -508,7 +510,8 @@ public class HomeFragment extends Fragment {
                     binding.btnGo.setEnabled(true);
                     binding.btnRegenerate.setEnabled(true);
 
-                    if (playlistsGenerated) {
+                    Boolean generated = homeStateVM.getRecommendationsGenerated().getValue();
+                    if (generated != null && generated) {
                         binding.currentMoodCard.setVisibility(View.VISIBLE);
                         binding.regenerateCard.setVisibility(View.VISIBLE);
                         binding.playlistSuggestionsSection.setVisibility(View.VISIBLE);
@@ -519,9 +522,6 @@ public class HomeFragment extends Fragment {
                     } else {
                         binding.welcomeCard.setVisibility(View.VISIBLE);
                         binding.createVibeCard.setVisibility(View.VISIBLE);
-                        binding.statsRow.setVisibility(View.VISIBLE);
-                        binding.recentTitle.setVisibility(View.VISIBLE);
-                        binding.recentItem.setVisibility(View.VISIBLE);
                         onGenerationEnd();
                         Toast.makeText(requireContext(), "Error fetching playlists. Try again.", Toast.LENGTH_SHORT).show();
                     }
@@ -530,7 +530,6 @@ public class HomeFragment extends Fragment {
         });
     }
 
-    // Fallback query if AI fails or returns empty
     private String fallbackQuery(@NonNull Context ctx) {
         String tod = ctx.timeOfDay == null ? "" : ctx.timeOfDay.toLowerCase();
         String wx  = ctx.weather == null ? "" : ctx.weather.name().toLowerCase();
@@ -545,7 +544,6 @@ public class HomeFragment extends Fragment {
         return "chill pop";
     }
 
-    // helper to keep chip rendering simple without changing binding points too much
     private Context ctxFromLastKnown() {
         String tod = computeTimeOfDay();
         String act = (liveActivity != null && !liveActivity.isEmpty()) ? liveActivity : lastActivityLabel;
@@ -557,12 +555,10 @@ public class HomeFragment extends Fragment {
     private void populateContextChipsFor(@NonNull Context ctx) {
         binding.contextTagsGroup.removeAllViews();
 
-        // activity
         if (ctx.activity != null && !ctx.activity.isEmpty()) {
             addContextChip(cap(ctx.activity));
         }
 
-        // light
         if (ctx.lightLevel != null && ctx.lightLevel != LightBucket.UNKNOWN) {
             String lightText;
             switch (ctx.lightLevel) {
@@ -574,7 +570,6 @@ public class HomeFragment extends Fragment {
             addContextChip(lightText);
         }
 
-        // weather
         if (ctx.weather != null && ctx.weather != WeatherState.UNKNOWN) {
             String w;
             switch (ctx.weather) {
@@ -586,12 +581,10 @@ public class HomeFragment extends Fragment {
             if (w != null) addContextChip(w);
         }
 
-        // time
         if (ctx.timeOfDay != null && !ctx.timeOfDay.isEmpty()) {
             addContextChip(cap(ctx.timeOfDay));
         }
 
-        // place tag or a couple of place types
         if (ctx.placeTag != null) {
             addContextChip(ctx.placeTag);
         } else if (ctx.nearbyPlaceTypes != null && !ctx.nearbyPlaceTypes.isEmpty()) {
@@ -601,7 +594,6 @@ public class HomeFragment extends Fragment {
             }
         }
 
-        // camera labels (top-2)
         if (ctx.imageLabels != null && !ctx.imageLabels.isEmpty()) {
             int n = Math.min(2, ctx.imageLabels.size());
             for (int i = 0; i < n; i++) addContextChip(ctx.imageLabels.get(i));
@@ -633,7 +625,6 @@ public class HomeFragment extends Fragment {
             if (h >= 17 && h < 22) return "evening";
             return "night";
         } catch (Throwable t) {
-            // Android < 26 without desugaring: fall back conservatively
             java.util.Calendar c = java.util.Calendar.getInstance();
             int h = c.get(java.util.Calendar.HOUR_OF_DAY);
             if (h >= 5 && h < 12)  return "morning";
@@ -645,14 +636,13 @@ public class HomeFragment extends Fragment {
 
     // ===================== SPOTIFY RENDER =====================
 
-    // Populate playlist cards based on current recommendations
-    private void populateSpotifyPlaylistCards() {
-        Log.d(TAG, "Populating " + spotifyPlaylists.size() + " playlist cards");
+    private void populateSpotifyPlaylistCards(List<SpotifyPlaylist> playlists) {
+        Log.d(TAG, "Populating " + playlists.size() + " playlist cards");
         binding.playlistCardsContainer.removeAllViews();
 
         SavedPlaylistsManager saved = new SavedPlaylistsManager(requireContext());
 
-        for (SpotifyPlaylist playlist : spotifyPlaylists) {
+        for (SpotifyPlaylist playlist : playlists) {
             View card = getLayoutInflater().inflate(
                     R.layout.item_playlist_card,
                     binding.playlistCardsContainer,
@@ -663,8 +653,7 @@ public class HomeFragment extends Fragment {
             TextView playlistName = card.findViewById(R.id.playlistName);
             TextView playlistMeta = card.findViewById(R.id.playlistMeta);
             com.google.android.material.button.MaterialButton btnPlay = card.findViewById(R.id.btnPlay);
-            com.google.android.material.button.MaterialButton btnSave =
-                    card.findViewById(R.id.btnSave); // bookmark toggle
+            com.google.android.material.button.MaterialButton btnSave = card.findViewById(R.id.btnSave);
 
             if (playlist.imageUrl != null && !playlist.imageUrl.isEmpty()) {
                 Glide.with(requireContext())
@@ -680,7 +669,6 @@ public class HomeFragment extends Fragment {
                 PlaylistOpener.openPlaylist(requireContext(), playlist);
             });
 
-            // Initial saved state & icon
             boolean isSaved = saved.isSpotifyPlaylistSaved(playlist);
             updateSaveButtonIcon(btnSave, isSaved);
             btnSave.setOnClickListener(v -> {
@@ -701,9 +689,9 @@ public class HomeFragment extends Fragment {
 
     private void updateSaveButtonIcon(com.google.android.material.button.MaterialButton btnSave, boolean isSaved) {
         if (isSaved) {
-            btnSave.setIconResource(com.comp90018.contexttunes.R.drawable.ic_saved);
+            btnSave.setIconResource(R.drawable.ic_saved);
         } else {
-            btnSave.setIconResource(com.comp90018.contexttunes.R.drawable.ic_unsaved);
+            btnSave.setIconResource(R.drawable.ic_unsaved);
         }
     }
 
@@ -722,7 +710,6 @@ public class HomeFragment extends Fragment {
         }
     }
 
-    // permissions callback (weather only)
     @Override public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions,
                                                      @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
@@ -732,8 +719,6 @@ public class HomeFragment extends Fragment {
             if (granted) fetchWeatherData();
             else updateWeatherStatus(WeatherService.WeatherState.UNKNOWN);
         }
-        // Speed perms (REQ_LOCATION_MULTI / REQ_ACTIVITY) are requested,
-        // but we *don’t* immediately start sensing here; user taps GO again.
     }
 
     // ===================== LIFECYCLE =====================
@@ -745,7 +730,6 @@ public class HomeFragment extends Fragment {
             lightSensor.start();
         }
 
-        // listen only while fragment is visible
         LocalBroadcastManager.getInstance(requireContext())
                 .registerReceiver(speedRx, new IntentFilter(AppEvents.ACTION_SPEED_UPDATE));
     }
@@ -768,8 +752,8 @@ public class HomeFragment extends Fragment {
                 a.setBottomNavInteractionEnabled(true);
             }
         } catch (Exception ignored) {}
-        if (mockWeatherService != null) {
-            mockWeatherService.shutdown();
+        if (weatherService != null) {
+            weatherService.shutdown();
         }
         if (spotifyAPI != null) {
             spotifyAPI.shutdown();
