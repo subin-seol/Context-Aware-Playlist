@@ -126,6 +126,15 @@ public class HomeFragment extends Fragment {
             }
         });
 
+        homeStateVM.getLastContext().observe(getViewLifecycleOwner(), ctx -> {
+            if (ctx != null) {
+                lastContext = ctx; // keep local mirror for quick access
+                if (playlistsGenerated) {
+                    populateContextChipsFor(ctx);
+                }
+            }
+        });
+
         imageVM.getCapturedImage().observe(getViewLifecycleOwner(), bitmap -> {
             binding.btnSnap.setVisibility(bitmap != null ? View.GONE : View.VISIBLE);
             binding.btnPreviewImage.setVisibility(bitmap != null ? View.VISIBLE : View.GONE);
@@ -186,6 +195,13 @@ public class HomeFragment extends Fragment {
         // If we already had state (process restore without LiveData tick), apply it once
         List<SpotifyPlaylist> existing = homeStateVM.getPlaylists().getValue();
         Boolean wasGen = homeStateVM.getRecommendationsGenerated().getValue();
+
+        // pull lastContext from VM
+        Context existingCtx = homeStateVM.getLastContext().getValue();
+        if (existingCtx != null) {
+            lastContext = existingCtx; // mirror into fragment
+        }
+
         if (existing != null && !existing.isEmpty()) {
             spotifyPlaylists = existing;
             populateSpotifyPlaylistCards();
@@ -193,10 +209,14 @@ public class HomeFragment extends Fragment {
         if (wasGen != null) {
             playlistsGenerated = wasGen;
             applyUIStateForGeneration(playlistsGenerated);
+            if (playlistsGenerated) {
+                // ensure chips render on first load after returning
+                populateContextChipsFor(getEffectiveContext());
+            }
         }
     }
 
-    private void applyUIStateForGeneration(boolean generated) { // tiny helper
+    private void applyUIStateForGeneration(boolean generated) {
         if (binding == null) return;
         if (generated) {
             binding.welcomeCard.setVisibility(View.GONE);
@@ -206,11 +226,9 @@ public class HomeFragment extends Fragment {
             binding.regenerateCard.setVisibility(View.VISIBLE);
             binding.playlistSuggestionsSection.setVisibility(View.VISIBLE);
 
-            // chips from last known (may rebuild on return)
-            populateContextChipsFor(lastContext != null ? lastContext : ctxFromLastKnown());
+            populateContextChipsFor(getEffectiveContext());
             binding.playlistEmptyText.setVisibility(spotifyPlaylists.isEmpty() ? View.VISIBLE : View.GONE);
         } else {
-            // before-generation state
             binding.currentMoodCard.setVisibility(View.GONE);
             binding.regenerateCard.setVisibility(View.GONE);
             binding.playlistSuggestionsSection.setVisibility(View.GONE);
@@ -218,6 +236,13 @@ public class HomeFragment extends Fragment {
             binding.welcomeCard.setVisibility(View.VISIBLE);
             binding.createVibeCard.setVisibility(View.VISIBLE);
         }
+    }
+
+    private Context getEffectiveContext() {
+        Context vmCtx = homeStateVM.getLastContext().getValue();
+        if (lastContext != null) return lastContext;
+        if (vmCtx != null) return vmCtx;
+        return ctxFromLastKnown();
     }
 
     // ===================== PERMISSION-GATED ACTIONS =====================
@@ -463,6 +488,7 @@ public class HomeFragment extends Fragment {
 
     private void proceedWithContext(@NonNull Context ctx) {
         lastContext = ctx; // store the exact context for chips rendering
+        homeStateVM.setLastContext(ctx); // persist in VM
 
         // 1) Decide if we have ANY context at all
         boolean hasLight   = (ctx.lightLevel != null && ctx.lightLevel != LightBucket.UNKNOWN);
@@ -798,8 +824,7 @@ public class HomeFragment extends Fragment {
 
     // ===================== LIFECYCLE =====================
 
-    @Override
-    public void onResume() {
+    @Override public void onResume() {
         super.onResume();
         if (settingsManager.isLocationEnabled()) {
             Long last = homeStateVM.getWeatherFetchedAt().getValue();
@@ -807,9 +832,10 @@ public class HomeFragment extends Fragment {
             boolean stale = (currentWeather == WeatherState.UNKNOWN)
                     || last == null
                     || (now - last > WEATHER_MAX_AGE_MS);
-            if (stale) {
-                ensureLocationAndFetchWeather(false); // silent auto-refresh
-            }
+            if (stale) ensureLocationAndFetchWeather(false);
+        }
+        if (playlistsGenerated && binding != null) {
+            populateContextChipsFor(getEffectiveContext());
         }
     }
 

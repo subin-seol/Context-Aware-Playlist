@@ -16,6 +16,9 @@ public class HomeStateViewModel extends ViewModel {
     private MutableLiveData<WeatherService.WeatherState> weatherState = new MutableLiveData<>();
     private final MutableLiveData<Long> weatherFetchedAt = new MutableLiveData<>(0L);
 
+    private final MutableLiveData<com.comp90018.contexttunes.domain.Context> lastContext
+            = new MutableLiveData<>(null);
+
     public LiveData<List<SpotifyPlaylist>> getPlaylists() {
         return playlists;
     }
@@ -42,4 +45,12 @@ public class HomeStateViewModel extends ViewModel {
 
     public LiveData<Long> getWeatherFetchedAt() { return weatherFetchedAt; }
     public void setWeatherFetchedAt(long tsMs) { weatherFetchedAt.setValue(tsMs); }
+
+    public LiveData<com.comp90018.contexttunes.domain.Context> getLastContext() {
+        return lastContext;
+    }
+
+    public void setLastContext(com.comp90018.contexttunes.domain.Context ctx) {
+        lastContext.setValue(ctx);
+    }
 }
