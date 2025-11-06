@@ -190,4 +190,16 @@ public class SettingsManager {
     public boolean isContextChangesEnabled() {
         return prefs.getBoolean(KEY_CONTEXT_CHANGES, true);
     }
+
+    // ===== AI Mode =====
+
+    private static final String KEY_AI_MODE = "ai_mode";
+
+    public void setAIMode(boolean enabled) {
+        prefs.edit().putBoolean(KEY_AI_MODE, enabled).apply();
+    }
+
+    public boolean isAIMode() {
+        return prefs.getBoolean(KEY_AI_MODE, true); // Default: AI enabled
+    }
 }
