@@ -8,6 +8,8 @@ import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.comp90018.contexttunes.BuildConfig;
+
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -18,8 +20,6 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-
-import com.comp90018.contexttunes.BuildConfig;
 
 /**
  * Provides current weather conditions as simple states: SUNNY, CLOUDY, RAINY.
@@ -147,6 +147,8 @@ public class WeatherService {
         String description = weather.optString("description", "").toLowerCase();
 
         // Map weather conditions to simple states
+        Log.d(TAG, "Weather main: " + main);
+        Log.d(TAG, "Weather description: " + description);
         switch (main) {
             case "clear":
                 return WeatherState.SUNNY;
