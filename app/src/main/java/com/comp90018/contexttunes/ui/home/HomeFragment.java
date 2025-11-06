@@ -29,7 +29,6 @@ import com.comp90018.contexttunes.domain.AIPlaylistRecommender;
 import com.comp90018.contexttunes.data.sensors.LightSensor;
 import com.comp90018.contexttunes.data.sensors.LightSensor.LightBucket;
 import com.comp90018.contexttunes.data.sensors.LocationSensor;
-import com.comp90018.contexttunes.data.weather.MockWeatherService;
 import com.comp90018.contexttunes.data.weather.WeatherService;
 import com.comp90018.contexttunes.data.weather.WeatherService.WeatherState;
 import com.comp90018.contexttunes.databinding.FragmentHomeBinding;
@@ -57,6 +56,7 @@ public class HomeFragment extends Fragment {
     private static final String TAG = "HomeFragment";
     private static final int DEFAULT_WINDOW_SECONDS = 20;
     private static final int SPOTIFY_LIMIT = 5;
+    private static final long WEATHER_MAX_AGE_MS = 45 * 60 * 1000L; // 45 min
 
     private FragmentHomeBinding binding;
     private SettingsManager settingsManager;
@@ -65,7 +65,7 @@ public class HomeFragment extends Fragment {
     private LocationContextHelper locationHelper;
     private AIPlaylistRecommender aiRecommender;
     private SpotifyAPI spotifyAPI;
-    private MockWeatherService mockWeatherService;
+    private WeatherService weatherService;
 
     private WeatherState currentWeather = WeatherState.UNKNOWN;
     private LightBucket currentLightBucket = LightBucket.UNKNOWN;
@@ -85,6 +85,7 @@ public class HomeFragment extends Fragment {
     @Nullable private Float  liveCadenceSpm = null;
     @Nullable private String liveActivity   = null;
     private String lastActivityLabel = "still";
+    private LightBucket lastShownLight = LightBucket.UNKNOWN;
 
     // camera labels
     @Nullable private ImageLabels currentImageLabels = null;
@@ -97,6 +98,7 @@ public class HomeFragment extends Fragment {
     @Nullable private Context lastContext = null;
 
     private HomeStateViewModel homeStateVM;
+
 
     // ===================== LIFECYCLE =====================
 
@@ -117,6 +119,12 @@ public class HomeFragment extends Fragment {
 
         // VM to hold Home state across navs
         homeStateVM = new ViewModelProvider(requireActivity()).get(HomeStateViewModel.class);
+        homeStateVM.getWeatherState().observe(getViewLifecycleOwner(), ws -> {
+            if (ws != null) {
+                currentWeather = ws;
+                updateWeatherStatus(ws);
+            }
+        });
 
         imageVM.getCapturedImage().observe(getViewLifecycleOwner(), bitmap -> {
             binding.btnSnap.setVisibility(bitmap != null ? View.GONE : View.VISIBLE);
@@ -131,7 +139,7 @@ public class HomeFragment extends Fragment {
         settingsManager   = new SettingsManager(requireContext());
         locationSensor    = new LocationSensor(requireContext());
         locationHelper    = new LocationContextHelper(requireContext());
-        mockWeatherService= new MockWeatherService(requireContext());
+        weatherService    = new WeatherService(requireContext());
         aiRecommender     = new AIPlaylistRecommender();
         spotifyAPI        = new SpotifyAPI(BuildConfig.SPOTIFY_ACCESS_TOKEN);
 
@@ -145,20 +153,12 @@ public class HomeFragment extends Fragment {
         // LIGHT
         if (settingsManager.isLightEnabled()) {
             lightSensor = new LightSensor(requireContext(), bucket -> {
+                if (bucket == lastShownLight) return;          // gate duplicates
+                lastShownLight = bucket;
+                currentLightBucket = bucket;
                 if (binding == null) return;
-                requireActivity().runOnUiThread(() -> {
-                    currentLightBucket = bucket;
-                    updateLightStatus(bucket);
-                });
+                requireActivity().runOnUiThread(() -> updateLightStatus(bucket));
             });
-        }
-
-        // ---- WEATHER (point-of-use permission) ----
-        // Only fetch weather if location is allowed in Settings (even though mock doesn’t use it yet)
-        if (settingsManager.isLocationEnabled()) {
-            ensureLocationAndFetchWeather();
-        } else {
-            updateWeatherStatus(WeatherState.UNKNOWN);
         }
 
         // SNAP nav
@@ -201,9 +201,6 @@ public class HomeFragment extends Fragment {
         if (generated) {
             binding.welcomeCard.setVisibility(View.GONE);
             binding.createVibeCard.setVisibility(View.GONE);
-            binding.statsRow.setVisibility(View.GONE);
-            binding.recentTitle.setVisibility(View.GONE);
-            binding.recentItem.setVisibility(View.GONE);
 
             binding.currentMoodCard.setVisibility(View.VISIBLE);
             binding.regenerateCard.setVisibility(View.VISIBLE);
@@ -220,9 +217,6 @@ public class HomeFragment extends Fragment {
 
             binding.welcomeCard.setVisibility(View.VISIBLE);
             binding.createVibeCard.setVisibility(View.VISIBLE);
-            binding.statsRow.setVisibility(View.VISIBLE);
-            binding.recentTitle.setVisibility(View.VISIBLE);
-            binding.recentItem.setVisibility(View.VISIBLE);
         }
     }
 
@@ -230,8 +224,12 @@ public class HomeFragment extends Fragment {
 
     /** Weather: request permission if needed, then fetch. */
     private void ensureLocationAndFetchWeather() {
+        ensureLocationAndFetchWeather(false);   // default: toast (used on GO)
+    }
+
+    private void ensureLocationAndFetchWeather(boolean showToast) {
         if (PermissionManager.hasLocationPermission(requireContext())) {
-            fetchWeatherData();
+            fetchWeatherData(showToast);
         } else {
             PermissionManager.requestLocation(this);
         }
@@ -240,22 +238,16 @@ public class HomeFragment extends Fragment {
 
     // ===================== WEATHER + LIGHT UI =====================
 
-    private void fetchWeatherData() {
-        Toast.makeText(requireContext(), "Fetching weather data...", Toast.LENGTH_SHORT).show();
-
-        // Mock: convert mock enum to WeatherService enum (kept as-is)
-        mockWeatherService.getCurrentWeather(mockWeather -> {
-            WeatherService.WeatherState converted;
-            switch (mockWeather) {
-                case SUNNY:  converted = WeatherService.WeatherState.SUNNY;  break;
-                case CLOUDY: converted = WeatherService.WeatherState.CLOUDY; break;
-                case RAINY:  converted = WeatherService.WeatherState.RAINY;  break;
-                case UNKNOWN:
-                default:     converted = WeatherService.WeatherState.UNKNOWN; break;
-            }
-
-            currentWeather = converted;
+    private void fetchWeatherData(boolean showToast) {
+        if (showToast) {
+            Toast.makeText(requireContext(), "Fetching weather data...", Toast.LENGTH_SHORT).show();
+        }
+        weatherService.getCurrentWeather(ws -> {
+            if (getActivity() == null) return;
             requireActivity().runOnUiThread(() -> {
+                currentWeather = ws;
+                homeStateVM.setWeatherState(ws); // persist in VM
+                homeStateVM.setWeatherFetchedAt(System.currentTimeMillis()); // track freshness
                 updateWeatherStatus(currentWeather);
             });
         });
@@ -292,6 +284,10 @@ public class HomeFragment extends Fragment {
     private void beginWindow(int seconds) {
         // pre-UI → loading
         onGenerationStart();
+
+        if (settingsManager.isLocationEnabled()) {
+            ensureLocationAndFetchWeather();   // this will show the toast exactly on GO
+        }
 
         // if user enabled “Accelerometer” in Settings, that’s our “speed pipeline” master toggle
         boolean speedEnabled = settingsManager.isAccelerometerEnabled();
@@ -482,9 +478,6 @@ public class HomeFragment extends Fragment {
                 binding.loadingContainer.setVisibility(View.GONE);
                 binding.welcomeCard.setVisibility(View.VISIBLE);
                 binding.createVibeCard.setVisibility(View.VISIBLE);
-                binding.statsRow.setVisibility(View.VISIBLE);
-                binding.recentTitle.setVisibility(View.VISIBLE);
-                binding.recentItem.setVisibility(View.VISIBLE);
                 binding.btnGo.setEnabled(true);
                 binding.btnRegenerate.setEnabled(true);
                 Toast.makeText(requireContext(),
@@ -529,9 +522,6 @@ public class HomeFragment extends Fragment {
             binding.currentMoodCard.setVisibility(View.GONE);
             binding.regenerateCard.setVisibility(View.GONE);
             binding.playlistSuggestionsSection.setVisibility(View.GONE);
-            binding.statsRow.setVisibility(View.GONE);
-            binding.recentTitle.setVisibility(View.GONE);
-            binding.recentItem.setVisibility(View.GONE);
             binding.btnGo.setEnabled(false);
             binding.btnRegenerate.setEnabled(false);
             binding.loadingContainer.setVisibility(View.VISIBLE);
@@ -591,9 +581,6 @@ public class HomeFragment extends Fragment {
                     } else {
                         binding.welcomeCard.setVisibility(View.VISIBLE);
                         binding.createVibeCard.setVisibility(View.VISIBLE);
-                        binding.statsRow.setVisibility(View.VISIBLE);
-                        binding.recentTitle.setVisibility(View.VISIBLE);
-                        binding.recentItem.setVisibility(View.VISIBLE);
                         onGenerationEnd();
                         Toast.makeText(requireContext(), "Error fetching playlists. Try again.", Toast.LENGTH_SHORT).show();
                         homeStateVM.setRecommendationsGenerated(false);
@@ -802,7 +789,7 @@ public class HomeFragment extends Fragment {
         if (requestCode == PermissionManager.REQ_LOCATION) {
             boolean granted = grantResults.length > 0
                     && grantResults[0] == PackageManager.PERMISSION_GRANTED;
-            if (granted) fetchWeatherData();
+            if (granted) fetchWeatherData(false);   // CHANGE: silent
             else updateWeatherStatus(WeatherService.WeatherState.UNKNOWN);
         }
         // Speed perms (REQ_LOCATION_MULTI / REQ_ACTIVITY) are requested,
@@ -810,6 +797,21 @@ public class HomeFragment extends Fragment {
     }
 
     // ===================== LIFECYCLE =====================
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        if (settingsManager.isLocationEnabled()) {
+            Long last = homeStateVM.getWeatherFetchedAt().getValue();
+            long now = System.currentTimeMillis();
+            boolean stale = (currentWeather == WeatherState.UNKNOWN)
+                    || last == null
+                    || (now - last > WEATHER_MAX_AGE_MS);
+            if (stale) {
+                ensureLocationAndFetchWeather(false); // silent auto-refresh
+            }
+        }
+    }
 
     @Override
     public void onStart() {
@@ -841,9 +843,7 @@ public class HomeFragment extends Fragment {
                 a.setBottomNavInteractionEnabled(true);
             }
         } catch (Exception ignored) {}
-        if (mockWeatherService != null) {
-            mockWeatherService.shutdown();
-        }
+        if (weatherService != null) weatherService.shutdown();
         if (spotifyAPI != null) {
             spotifyAPI.shutdown();
         }

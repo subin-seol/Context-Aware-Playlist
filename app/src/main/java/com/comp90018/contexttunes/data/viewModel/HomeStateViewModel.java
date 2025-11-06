@@ -14,6 +14,7 @@ public class HomeStateViewModel extends ViewModel {
     private final MutableLiveData<List<SpotifyPlaylist>> playlists = new MutableLiveData<>(new ArrayList<>());
     private final MutableLiveData<Boolean> recommendationsGenerated = new MutableLiveData<>(false);
     private MutableLiveData<WeatherService.WeatherState> weatherState = new MutableLiveData<>();
+    private final MutableLiveData<Long> weatherFetchedAt = new MutableLiveData<>(0L);
 
     public LiveData<List<SpotifyPlaylist>> getPlaylists() {
         return playlists;
@@ -38,4 +39,7 @@ public class HomeStateViewModel extends ViewModel {
     public void setWeatherState(WeatherService.WeatherState weather) {
         weatherState.setValue(weather);
     }
+
+    public LiveData<Long> getWeatherFetchedAt() { return weatherFetchedAt; }
+    public void setWeatherFetchedAt(long tsMs) { weatherFetchedAt.setValue(tsMs); }
 }
