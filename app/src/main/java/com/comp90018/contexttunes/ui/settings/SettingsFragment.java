@@ -61,10 +61,22 @@ public class SettingsFragment extends Fragment {
         loadSettings();
 
         // Setup listeners
+        setupAIModeListener();
         setupSensorToggleListeners();   // preferances only, no OS prompts here
         setupLocationTaggingListeners();    // point-of-use permission here
         setupNotificationListeners();
 
+    }
+
+    private void setupAIModeListener() {
+        binding.switchAiMode.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            settingsManager.setAIMode(isChecked);
+            android.widget.Toast.makeText(
+                    requireContext(),
+                    "AI mode " + (isChecked ? "enabled" : "disabled"),
+                    android.widget.Toast.LENGTH_SHORT
+            ).show();
+        });
     }
 
     @Override
@@ -178,9 +190,9 @@ public class SettingsFragment extends Fragment {
             return;
         }
 
-        if (!PermissionManager.hasLocationPermission(requireContext())) {
+        if (!PermissionManager.hasAnyLocation(requireContext())) {
             pendingLocationTag = tag;
-            PermissionManager.requestLocation(this);
+            PermissionManager.requestLocationFineAndCoarse(this);
             return;
         }
 

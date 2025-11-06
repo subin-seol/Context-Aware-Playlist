@@ -166,10 +166,10 @@ public class HomeFragment extends Fragment {
 
     /** Weather: request permission if needed, then fetch. */
     private void ensureLocationAndFetchWeather() {
-        if (PermissionManager.hasLocationPermission(requireContext())) {
+        if (PermissionManager.hasAnyLocation(requireContext())) {
             fetchWeatherData();
         } else {
-            PermissionManager.requestLocation(this);
+            PermissionManager.requestLocationFineAndCoarse(this);
         }
     }
 
@@ -423,6 +423,11 @@ public class HomeFragment extends Fragment {
                 Toast.makeText(requireContext(),
                         "Not enough context. Enable sensors or add a photo.", Toast.LENGTH_LONG).show();
             });
+            return;
+        }
+
+        if (!settingsManager.isAIMode()) {
+            runSpotify(fallbackQuery(ctx));   // skip AI, deterministic fallback
             return;
         }
 
