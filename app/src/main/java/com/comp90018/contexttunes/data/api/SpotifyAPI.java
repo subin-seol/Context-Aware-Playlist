@@ -115,16 +115,13 @@ public class SpotifyAPI {
                     }
 
                     String ownerName = "Unknown";
-                    if (!item.isNull("owner")) {
-                        JSONObject owner = item.getJSONObject("owner");
-                        ownerName = owner.optString("display_name", "Unknown");
+                    JSONArray artists = item.optJSONArray("artists");
+                    if (artists != null && artists.length() > 0) {
+                        JSONObject artist = artists.getJSONObject(0);
+                        ownerName = artist.optString("name", "Unknown");
                     }
 
-                    int totalTracks = 0;
-                    if (!item.isNull("tracks")) {
-                        JSONObject tracks = item.getJSONObject("tracks");
-                        totalTracks = tracks.optInt("total", 0);
-                    }
+                    int totalTracks = item.optInt("total_tracks", 0);
 
                     String externalUrl = "";
                     if (!item.isNull("external_urls")) {
