@@ -89,7 +89,7 @@
                 android:layout_height="48dp"
                 android:layout_weight="1"
                 android:layout_marginStart="8dp"
-                android:text="Generate playlist"
+                android:text="Add image"
                 android:textColor="@android:color/black"
                 android:background="@drawable/generate_playlist_button"
                 android:gravity="center"

@@ -58,6 +58,8 @@ public class HomeFragment extends Fragment {
     private static final int SPOTIFY_LIMIT = 5;
     private static final long WEATHER_MAX_AGE_MS = 45 * 60 * 1000L; // 45 min
 
+    private boolean isCurrentlyLoading = false;
+
     private FragmentHomeBinding binding;
     private SettingsManager settingsManager;
     private LightSensor lightSensor;
@@ -98,6 +100,8 @@ public class HomeFragment extends Fragment {
     @Nullable private Context lastContext = null;
 
     private HomeStateViewModel homeStateVM;
+    private String currentLocationText = "—";
+    private String currentSpeedText = "—";
 
 
     // ===================== LIFECYCLE =====================
@@ -218,9 +222,16 @@ public class HomeFragment extends Fragment {
 
     private void applyUIStateForGeneration(boolean generated) {
         if (binding == null) return;
+        if (isCurrentlyLoading) return; // dont apply UI changes if currently loading
         if (generated) {
             binding.welcomeCard.setVisibility(View.GONE);
             binding.createVibeCard.setVisibility(View.GONE);
+            binding.contextCardsContainer.setVisibility(View.GONE);
+            binding.weatherStatus.setVisibility(View.GONE);
+            binding.lightValue.setVisibility(View.GONE);
+            binding.locationValue.setVisibility(View.GONE);
+            binding.speedValue.setVisibility(View.GONE);
+
 
             binding.currentMoodCard.setVisibility(View.VISIBLE);
             binding.regenerateCard.setVisibility(View.VISIBLE);
@@ -235,6 +246,11 @@ public class HomeFragment extends Fragment {
 
             binding.welcomeCard.setVisibility(View.VISIBLE);
             binding.createVibeCard.setVisibility(View.VISIBLE);
+            binding.contextCardsContainer.setVisibility(View.VISIBLE);
+            binding.weatherStatus.setVisibility(View.VISIBLE);
+            binding.lightValue.setVisibility(View.VISIBLE);
+            binding.locationValue.setVisibility(View.VISIBLE);
+            binding.speedValue.setVisibility(View.VISIBLE);
         }
     }
 
@@ -415,6 +431,7 @@ public class HomeFragment extends Fragment {
     }
 
     private void onGenerationStart() {
+        isCurrentlyLoading = true;
         showLoading(true);
         if (getActivity() instanceof MainActivity) {
             MainActivity a = (MainActivity) getActivity();
@@ -422,11 +439,10 @@ public class HomeFragment extends Fragment {
             a.setBottomNavVisibility(false);
         }
 
-        // reset VM “generated” while we’re re-generating
-        homeStateVM.setRecommendationsGenerated(false);
     }
 
     private void onGenerationEnd() {
+        isCurrentlyLoading = false;
         if (getActivity() instanceof MainActivity) {
             MainActivity a = (MainActivity) getActivity();
             a.setBottomNavVisibility(true);
@@ -449,6 +465,13 @@ public class HomeFragment extends Fragment {
             liveCadenceSpm = Float.isNaN(spm) ? null : spm;
             liveActivity   = (act == null || act.isEmpty()) ? "still" : act;
 
+            // UPDATE: Also update the speed card in real-time
+            if (binding != null) {
+                requireActivity().runOnUiThread(() ->
+                        updateSpeedCard(liveActivity, liveSpeedKmh)
+                );
+            }
+
             if (isFinal) {
                 cancelWatchdog();
                 lastActivityLabel = (liveActivity == null ? "still" : liveActivity);
@@ -462,13 +485,17 @@ public class HomeFragment extends Fragment {
         if (settingsManager.isLocationEnabled() && PermissionManager.hasAnyLocation(requireContext())) {
             locationSensor.getCurrentLocation(loc -> {
                 if (loc == null) {
+                    updateLocationCard(null, null);
                     buildContextAndProceed(timeOfDay, activity, null, null);
                 } else {
-                    locationHelper.getLocationContext(loc, (placeTag, nearby) ->
-                            buildContextAndProceed(timeOfDay, activity, placeTag, nearby));
+                    locationHelper.getLocationContext(loc, (placeTag, nearby) -> {
+                        updateLocationCard(placeTag, nearby);
+                        buildContextAndProceed(timeOfDay, activity, placeTag, nearby);
+                    });
                 }
             });
         } else {
+            updateLocationCard(null, null);
             buildContextAndProceed(timeOfDay, activity, null, null);
         }
     }
@@ -549,6 +576,7 @@ public class HomeFragment extends Fragment {
     private void showLoading(boolean on) {
         if (on) {
             binding.welcomeCard.setVisibility(View.GONE);
+            binding.contextCardsContainer.setVisibility(View.GONE);
             binding.createVibeCard.setVisibility(View.GONE);
             binding.currentMoodCard.setVisibility(View.GONE);
             binding.regenerateCard.setVisibility(View.GONE);
@@ -557,6 +585,7 @@ public class HomeFragment extends Fragment {
             binding.btnRegenerate.setEnabled(false);
             binding.loadingContainer.setVisibility(View.VISIBLE);
         } else {
+            binding.contextCardsContainer.setVisibility(View.VISIBLE);
             binding.loadingContainer.setVisibility(View.GONE);
             binding.btnGo.setEnabled(true);
             binding.btnRegenerate.setEnabled(true);
@@ -572,6 +601,9 @@ public class HomeFragment extends Fragment {
                     spotifyPlaylists = playlists;
                     playlistsGenerated = true;
 
+                    // End generation state FIRST before updating UI
+                    onGenerationEnd();
+
                     // persist data + generated flag
                     homeStateVM.setPlaylists(playlists);
                     homeStateVM.setRecommendationsGenerated(true);
@@ -579,6 +611,15 @@ public class HomeFragment extends Fragment {
                     binding.loadingContainer.setVisibility(View.GONE);
                     binding.btnGo.setEnabled(true);
                     binding.btnRegenerate.setEnabled(true);
+
+                    // Explicitly hide "before" state
+                    binding.welcomeCard.setVisibility(View.GONE);
+                    binding.createVibeCard.setVisibility(View.GONE);
+                    binding.contextCardsContainer.setVisibility(View.GONE);
+                    binding.weatherStatus.setVisibility(View.GONE);
+                    binding.lightValue.setVisibility(View.GONE);
+                    binding.locationValue.setVisibility(View.GONE);
+                    binding.speedValue.setVisibility(View.GONE);
 
                     // Show “after” state
                     binding.currentMoodCard.setVisibility(View.VISIBLE);
@@ -608,13 +649,22 @@ public class HomeFragment extends Fragment {
                         binding.playlistCardsContainer.removeAllViews();
                         binding.playlistEmptyText.setText(getString(R.string.no_playlists_found));
                         binding.playlistEmptyText.setVisibility(View.VISIBLE);
+                        binding.contextCardsContainer.setVisibility(View.GONE);
+                        binding.weatherStatus.setVisibility(View.GONE);
+                        binding.lightValue.setVisibility(View.GONE);
+                        binding.locationValue.setVisibility(View.GONE);
+                        binding.speedValue.setVisibility(View.GONE);
                         onGenerationEnd();
                     } else {
                         binding.welcomeCard.setVisibility(View.VISIBLE);
                         binding.createVibeCard.setVisibility(View.VISIBLE);
+                        binding.contextCardsContainer.setVisibility(View.VISIBLE);
+                        binding.weatherStatus.setVisibility(View.VISIBLE);
+                        binding.lightValue.setVisibility(View.VISIBLE);
+                        binding.locationValue.setVisibility(View.VISIBLE);
+                        binding.speedValue.setVisibility(View.VISIBLE);
                         onGenerationEnd();
                         Toast.makeText(requireContext(), "Error fetching playlists. Try again.", Toast.LENGTH_SHORT).show();
-                        homeStateVM.setRecommendationsGenerated(false);
                     }
                 });
             }
@@ -797,6 +847,51 @@ public class HomeFragment extends Fragment {
             btnSave.setIconResource(com.comp90018.contexttunes.R.drawable.ic_unsaved);
         }
     }
+// Update location card
+    private void updateLocationCard(@Nullable String placeTag, @Nullable List<String> nearbyTypes) {
+        if (binding == null) return;
+
+        String locationText;
+        if (placeTag != null && !placeTag.isEmpty()) {
+            // Capitalize first letter
+            locationText = placeTag.substring(0, 1).toUpperCase(Locale.getDefault())
+                    + placeTag.substring(1);
+        } else if (nearbyTypes != null && !nearbyTypes.isEmpty()) {
+            // Show first nearby type, capitalize
+            String first = nearbyTypes.get(0);
+            locationText = first.substring(0, 1).toUpperCase(Locale.getDefault())
+                    + first.substring(1);
+        } else {
+            locationText = "—";
+        }
+
+        currentLocationText = locationText;
+        binding.locationValue.setText(locationText);
+    }
+
+    // Update speed card
+    private void updateSpeedCard(@Nullable String activity, @Nullable Float speedKmh) {
+        if (binding == null) return;
+
+        String speedText;
+        if (activity != null && !activity.isEmpty() && !activity.equals("still")) {
+            // Show activity with capitalization
+            speedText = activity.substring(0, 1).toUpperCase(Locale.getDefault())
+                    + activity.substring(1);
+
+            // Optionally add speed if available
+            if (speedKmh != null && speedKmh > 0.5f) {
+                speedText += String.format(Locale.getDefault(), " (%.1f km/h)", speedKmh);
+            }
+        } else if (speedKmh != null && speedKmh > 0.5f) {
+            speedText = String.format(Locale.getDefault(), "%.1f km/h", speedKmh);
+        } else {
+            speedText = "Still";
+        }
+
+        currentSpeedText = speedText;
+        binding.speedValue.setText(speedText);
+    }
 
     // ===================== PERMISSIONS =====================
     private static final int REQ_NOTIFICATIONS = 2001;
@@ -831,6 +926,12 @@ public class HomeFragment extends Fragment {
 
     @Override public void onResume() {
         super.onResume();
+
+        if (getActivity() instanceof MainActivity) {
+            MainActivity a = (MainActivity) getActivity();
+            a.setBottomNavVisibility(true);
+            a.setBottomNavInteractionEnabled(true);
+        }
         if (settingsManager.isLocationEnabled()) {
             Long last = homeStateVM.getWeatherFetchedAt().getValue();
             long now = System.currentTimeMillis();
@@ -839,6 +940,11 @@ public class HomeFragment extends Fragment {
                     || (now - last > WEATHER_MAX_AGE_MS);
             if (stale) ensureLocationAndFetchWeather(false);
         }
+        // Refresh speed card if we have live data
+        if (liveActivity != null || liveSpeedKmh != null) {
+            updateSpeedCard(liveActivity != null ? liveActivity : lastActivityLabel, liveSpeedKmh);
+        }
+
         if (playlistsGenerated && binding != null) {
             populateContextChipsFor(getEffectiveContext());
         }

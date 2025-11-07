@@ -11,7 +11,8 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="@dimen/space_16">
+        android:padding="@dimen/space_16"
+        android:gravity="center_horizontal">
 
         <!-- BEFORE: Welcome Card -->
         <com.google.android.material.card.MaterialCardView
@@ -30,7 +31,7 @@
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
-                android:padding="@dimen/space_16">
+                android:padding="20dp">
 
                 <LinearLayout
                     android:layout_width="0dp"
@@ -42,78 +43,189 @@
                         android:id="@+id/welcomeTitle"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Welcome back Alex!"
+                        android:text="Welcome back!"
                         android:textColor="@color/text_primary"
-                        android:textSize="22sp"
+                        android:textSize="28sp"
                         android:textStyle="bold" />
 
                     <TextView
                         android:id="@+id/welcomeSubtitle"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/space_4"
+                        android:layout_marginTop="@dimen/space_8"
                         android:text="Your music, perfectly matched to your world"
                         android:textColor="@color/text_secondary"
-                        android:textSize="14sp" />
-
-                    <TextView
-                        android:id="@+id/weatherStatus"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/space_8"
-                        android:text="Weather: —"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="12sp"
-                        android:includeFontPadding="false" />
-
-                    <TextView
-                        android:id="@+id/lightValue"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/space_8"
-                        android:text="Light: —"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="12sp"
-                        android:includeFontPadding="false" />
+                        android:textSize="15sp" />
                 </LinearLayout>
 
                 <ImageView
                     android:id="@+id/welcomeIcon"
-                    android:layout_width="40dp"
-                    android:layout_height="40dp"
+                    android:layout_width="56dp"
+                    android:layout_height="56dp"
                     android:src="@drawable/baseline_music_note_24"
                     android:contentDescription="@string/app_name"
                     app:tint="@color/teal_accent"/>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- BEFORE: Create My Vibe Card -->
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/createVibeCard"
+        <!-- Context Info Cards-->
+        <LinearLayout
+            android:id="@+id/contextCardsContainer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_16"
-            app:cardBackgroundColor="@color/card_dark"
-            app:cardCornerRadius="@dimen/radius_20"
-            app:cardElevation="@dimen/elev_2"
-            app:strokeColor="@android:color/transparent"
-            app:strokeWidth="0dp">
+            android:orientation="vertical"
+            android:layout_marginTop="@dimen/space_16">
 
+            <!-- Weather & Light -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:padding="@dimen/space_16">
+                android:layout_marginBottom="@dimen/space_12">
 
-                <TextView
+                <!-- Weather Card -->
+                <com.google.android.material.card.MaterialCardView
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:text="Create My Vibe"
-                    android:textColor="@color/text_primary"
-                    android:textSize="16sp"
-                    android:textStyle="bold" />
+                    android:layout_marginEnd="6dp"
+                    app:cardBackgroundColor="@color/card_dark"
+                    app:cardCornerRadius="12dp"
+                    app:cardElevation="1dp"
+                    app:strokeColor="@android:color/transparent"
+                    app:strokeWidth="0dp">
+
+                    <TextView
+                        android:id="@+id/weatherStatus"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:padding="12dp"
+                        android:text="Weather: —"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp"
+                        android:includeFontPadding="false" />
+                </com.google.android.material.card.MaterialCardView>
+
+                <!-- Light Card -->
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="6dp"
+                    app:cardBackgroundColor="@color/card_dark"
+                    app:cardCornerRadius="12dp"
+                    app:cardElevation="1dp"
+                    app:strokeColor="@android:color/transparent"
+                    app:strokeWidth="0dp">
+
+                    <TextView
+                        android:id="@+id/lightValue"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:padding="12dp"
+                        android:text="Light: —"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp"
+                        android:includeFontPadding="false" />
+                </com.google.android.material.card.MaterialCardView>
+            </LinearLayout>
+
+            <!-- Location & Activity -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <!-- Location Card -->
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="6dp"
+                    app:cardBackgroundColor="@color/card_dark"
+                    app:cardCornerRadius="12dp"
+                    app:cardElevation="1dp"
+                    app:strokeColor="@android:color/transparent"
+                    app:strokeWidth="0dp">
+
+                    <TextView
+                        android:id="@+id/locationValue"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:padding="12dp"
+                        android:text="Location: —"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp"
+                        android:maxLines="1"
+                        android:ellipsize="end"
+                        android:includeFontPadding="false" />
+                </com.google.android.material.card.MaterialCardView>
+
+                <!-- Activity Card -->
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="6dp"
+                    app:cardBackgroundColor="@color/card_dark"
+                    app:cardCornerRadius="12dp"
+                    app:cardElevation="1dp"
+                    app:strokeColor="@android:color/transparent"
+                    app:strokeWidth="0dp">
+
+                    <TextView
+                        android:id="@+id/speedValue"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:padding="12dp"
+                        android:text="Activity: —"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp"
+                        android:includeFontPadding="false" />
+                </com.google.android.material.card.MaterialCardView>
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Spacer -->
+        <Space
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
+        <!-- BEFORE: Action Buttons -->
+        <LinearLayout
+            android:id="@+id/createVibeCard"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:layout_marginTop="24dp"
+            android:layout_marginBottom="24dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Create My Vibe"
+                android:textColor="@color/text_primary"
+                android:textSize="24sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="@dimen/space_12" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Snap a photo or just go with the vibe"
+                android:textColor="@color/text_secondary"
+                android:textSize="14sp"
+                android:layout_marginBottom="@dimen/space_20"
+                android:gravity="center" />
+
+            <!-- Action Buttons -->
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center">
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnSnap"
@@ -131,21 +243,8 @@
                     app:backgroundTint="#3A4A5C"
                     app:iconTint="@color/text_primary" />
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnPreviewImage"
-                    style="@style/Widget.MaterialComponents.Button"
-                    android:layout_width="wrap_content"
-                    android:layout_height="48dp"
-                    android:layout_marginStart="@dimen/space_12"
-                    android:text="View Image"
-                    android:textAllCaps="false"
-                    android:textColor="@android:color/black"
-                    app:cornerRadius="12dp"
-                    app:backgroundTint="@color/teal_accent"
-                    android:visibility="gone"/>
-
                 <Space
-                    android:layout_width="@dimen/space_12"
+                    android:layout_width="@dimen/space_16"
                     android:layout_height="0dp" />
 
                 <com.google.android.material.button.MaterialButton
@@ -153,7 +252,7 @@
                     style="@style/Widget.MaterialComponents.Button"
                     android:layout_width="wrap_content"
                     android:layout_height="48dp"
-                    android:text="GO"
+                    android:text="Generate"
                     android:textAllCaps="true"
                     android:paddingStart="24dp"
                     android:paddingEnd="24dp"
@@ -161,16 +260,61 @@
                     app:backgroundTint="@color/teal_accent"
                     android:textColor="@android:color/black" />
             </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
 
-        <!-- AFTER: Current Mood (Centered, No Card) -->
+            <!-- Preview Image Button (Hidden by default) -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnPreviewImage"
+                style="@style/Widget.MaterialComponents.Button"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:layout_marginTop="@dimen/space_12"
+                android:text="View Image"
+                android:textAllCaps="false"
+                android:textColor="@android:color/black"
+                app:cornerRadius="12dp"
+                app:backgroundTint="@color/teal_accent"
+                android:visibility="gone"/>
+        </LinearLayout>
+
+        <!-- Loading Container -->
+        <LinearLayout
+            android:id="@+id/loadingContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:padding="32dp"
+            android:visibility="gone">
+
+            <ProgressBar
+                android:layout_width="60dp"
+                android:layout_height="60dp"
+                android:indeterminateTint="@color/teal_accent" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_16"
+                android:text="Generating your playlists..."
+                android:textColor="@color/text_primary"
+                android:textSize="16sp"
+                android:textAlignment="center" />
+        </LinearLayout>
+
+        <!-- Spacer -->
+        <Space
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
+        <!-- AFTER: Current Mood -->
         <LinearLayout
             android:id="@+id/currentMoodCard"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:gravity="center"
-            android:paddingTop="60dp"
+            android:paddingTop="40dp"
             android:paddingBottom="24dp"
             android:visibility="gone">
 
@@ -179,7 +323,7 @@
                 android:layout_height="wrap_content"
                 android:text="Current Mood"
                 android:textColor="@color/text_primary"
-                android:textSize="28sp"
+                android:textSize="24sp"
                 android:textStyle="bold"
                 android:layout_marginBottom="@dimen/space_16" />
 
@@ -190,7 +334,7 @@
                 app:chipSpacing="@dimen/space_8" />
         </LinearLayout>
 
-        <!-- AFTER: Regenerate Card -->
+        <!-- AFTER: Regenerate Card  -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/regenerateCard"
             android:layout_width="match_parent"
@@ -260,7 +404,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:layout_marginTop="24dp"
+            android:layout_marginTop="32dp"
             android:visibility="gone">
 
             <LinearLayout
@@ -315,32 +459,6 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical" />
-        </LinearLayout>
-
-        <!-- Loading Container -->
-        <LinearLayout
-            android:id="@+id/loadingContainer"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="100dp"
-            android:orientation="vertical"
-            android:gravity="center"
-            android:padding="32dp"
-            android:visibility="gone">
-
-            <ProgressBar
-                android:layout_width="60dp"
-                android:layout_height="60dp"
-                android:indeterminateTint="@color/teal_accent" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_16"
-                android:text="Generating your playlists..."
-                android:textColor="@color/text_primary"
-                android:textSize="16sp"
-                android:textAlignment="center" />
         </LinearLayout>
 
     </LinearLayout>
