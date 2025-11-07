@@ -14,7 +14,7 @@
         android:padding="@dimen/space_16"
         android:gravity="center_horizontal">
 
-        <!-- BEFORE: Prominent Welcome Card (keeping original ID) -->
+        <!-- BEFORE: Welcome Card -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/welcomeCard"
             android:layout_width="match_parent"
@@ -68,7 +68,7 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- Context Info Cards - 2x2 Grid with Cards -->
+        <!-- Context Info Cards-->
         <LinearLayout
             android:id="@+id/contextCardsContainer"
             android:layout_width="match_parent"
@@ -76,7 +76,7 @@
             android:orientation="vertical"
             android:layout_marginTop="@dimen/space_16">
 
-            <!-- First Row: Weather & Light -->
+            <!-- Weather & Light -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -130,7 +130,7 @@
                 </com.google.android.material.card.MaterialCardView>
             </LinearLayout>
 
-            <!-- Second Row: Location & Activity -->
+            <!-- Location & Activity -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -186,13 +186,13 @@
             </LinearLayout>
         </LinearLayout>
 
-        <!-- Spacer to push content to center -->
+        <!-- Spacer -->
         <Space
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1" />
 
-        <!-- BEFORE: Action Buttons (No Card, Just Buttons) -->
+        <!-- BEFORE: Action Buttons -->
         <LinearLayout
             android:id="@+id/createVibeCard"
             android:layout_width="match_parent"
@@ -276,7 +276,7 @@
                 android:visibility="gone"/>
         </LinearLayout>
 
-        <!-- Loading Container - Centered -->
+        <!-- Loading Container -->
         <LinearLayout
             android:id="@+id/loadingContainer"
             android:layout_width="match_parent"
@@ -301,13 +301,13 @@
                 android:textAlignment="center" />
         </LinearLayout>
 
-        <!-- Spacer to push content to center -->
+        <!-- Spacer -->
         <Space
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1" />
 
-        <!-- AFTER: Current Mood (Centered) -->
+        <!-- AFTER: Current Mood -->
         <LinearLayout
             android:id="@+id/currentMoodCard"
             android:layout_width="match_parent"
@@ -334,7 +334,7 @@
                 app:chipSpacing="@dimen/space_8" />
         </LinearLayout>
 
-        <!-- AFTER: Regenerate Card (keeping original ID) -->
+        <!-- AFTER: Regenerate Card  -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/regenerateCard"
             android:layout_width="match_parent"
