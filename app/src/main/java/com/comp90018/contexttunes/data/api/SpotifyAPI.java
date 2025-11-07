@@ -105,7 +105,7 @@ public class SpotifyAPI {
 
         String encodedQuery = URLEncoder.encode(query, "UTF-8");
         String urlString = BASE_URL + "?q=" + encodedQuery +
-                "&type=album&limit=" + limit + "&offset=" + offset;
+                "&type=album&limit=" + limit + "&offset=" + offset + "&market=AU";
 
         Log.d("SpotifyAPI", "➡️ Request URL: " + urlString);
 

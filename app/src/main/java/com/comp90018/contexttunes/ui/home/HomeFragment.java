@@ -182,6 +182,8 @@ public class HomeFragment extends Fragment {
         binding.btnGo.setOnClickListener(v -> beginWindow(DEFAULT_WINDOW_SECONDS));
         binding.btnRegenerate.setOnClickListener(v -> beginWindow(DEFAULT_WINDOW_SECONDS));
 
+        binding.btnSnapRegen.setOnClickListener(v -> ((MainActivity) requireActivity()).openSnap());
+
         // restore previously generated playlists/state when coming back from other tabs
         homeStateVM.getPlaylists().observe(getViewLifecycleOwner(), pl -> {
             if (pl == null) return;
