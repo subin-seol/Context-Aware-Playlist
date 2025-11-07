@@ -11,6 +11,8 @@ ContextTunes is a sensor-driven, AI-augmented music recommendation app developed
 
 The project has been tested on a **Pixel 8 emulator** and a **physical Pixel 8 device** (API level 34, Android 14), ensuring compatibility with API level 26 or higher and Google Play Services.
 
+## Project Demo Link: https://www.youtube.com/watch?v=2ozlnPfikCg
+
 ## Setup and Execution Instructions
 
 ### Prerequisites
