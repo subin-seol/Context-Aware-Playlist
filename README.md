@@ -1,9 +1,10 @@
 # ContextTunes 🎵
 
 ## Project Overview
-ContextTunes is a sensor-driven, AI-augmented music recommendation app developed for COMP90018 (Mobile Computing Systems Programming). The app dynamically generates Spotify playlist recommendations based on the user's real-time environment, using on-device sensors (light, accelerometer, GPS, camera) and OpenAI's GPT-4o-mini model for contextual reasoning. Key features include:
+ContextTunes is a sensor-driven, AI-augmented music recommendation app developed for COMP90018 (Mobile Computing Systems Programming). The app dynamically generates Spotify playlist recommendations based on the user's real-time environment, using on-device sensors (light, accelerometer, GPS, camera) and OpenAI's GPT-4o-mini model for contextual reasoning. It also integrates Google Places API and OpenWeather API to enhance context awareness. Key features include:
 
 - **Sensor Integration**: Uses light sensor (ambient brightness), accelerometer (motion detection), GPS (location tracking), and camera (ML Kit for scene labeling) to infer user context (e.g., "running outdoors," "studying in low light").
+- **External Services**: Combines sensor data with data from Google Places (for identifying nearby locations) and Open Weather (for retrieving real-time weather conditions) API for richer environmental context.
 - **AI Reasoning**: Combines sensor data into a context vector and uses OpenAI's API to generate personalized Spotify search queries.
 - **Spotify Integration**: Fetches and opens playlists via Spotify deep links.
 - **User Interface**: Provides a simple, context-aware UI with real-time sensor feedback and playlist suggestions.
