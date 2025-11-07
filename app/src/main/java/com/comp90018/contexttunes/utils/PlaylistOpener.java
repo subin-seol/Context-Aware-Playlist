@@ -4,6 +4,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
+import android.util.Log;
 import android.widget.Toast;
 
 import com.comp90018.contexttunes.domain.SpotifyPlaylist;
@@ -17,14 +18,22 @@ public class PlaylistOpener {
             return;
         }
 
-        final String appUri = (playlist.id != null && !playlist.id.isEmpty())
-                ? "spotify:playlist:" + playlist.id
-                : null;
         final String webUrl = playlist.externalUrl;
+        String appUri = null;
+
+        // Infer type from externalUrl path
+        if (webUrl != null) {
+            if (webUrl.contains("/album/")) {
+                appUri = "spotify:album:" + playlist.id;
+            } else if (webUrl.contains("/playlist/")) {
+                appUri = "spotify:playlist:" + playlist.id;
+            }
+        }
 
         boolean hasSpotify = isSpotifyInstalled(context);
 
         if (hasSpotify && appUri != null) {
+            Log.d("PlaylistOpener", "Opening playlist in Spotify app: " + appUri);
             // Open directly in Spotify app
             openUri(context, appUri);
             return;
