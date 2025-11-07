@@ -103,6 +103,9 @@ public class HomeFragment extends Fragment {
     private String currentLocationText = "—";
     private String currentSpeedText = "—";
 
+    @Nullable private Bitmap imageUsedLastRun = null;
+    private boolean useImageLabelsThisRun = false;
+
 
     // ===================== LIFECYCLE =====================
 
@@ -139,11 +142,6 @@ public class HomeFragment extends Fragment {
             }
         });
 
-        imageVM.getCapturedImage().observe(getViewLifecycleOwner(), bitmap -> {
-            binding.btnSnap.setVisibility(bitmap != null ? View.GONE : View.VISIBLE);
-            binding.btnPreviewImage.setVisibility(bitmap != null ? View.VISIBLE : View.GONE);
-        });
-
         imageVM.getImageLabels().observe(getViewLifecycleOwner(), labels -> {
             currentImageLabels = labels; // keep latest labels for context & chips
         });
@@ -174,15 +172,33 @@ public class HomeFragment extends Fragment {
             });
         }
 
-        // SNAP nav
+        // SNAP (before gen)
         binding.btnSnap.setOnClickListener(v -> ((MainActivity) requireActivity()).openSnap());
         binding.btnPreviewImage.setOnClickListener(v -> ((MainActivity) requireActivity()).openSnap());
+
+        // SNAP (after gen)
+        binding.btnSnapRegen.setOnClickListener(v -> ((MainActivity) requireActivity()).openSnap());
+        binding.btnPreviewImageRegen.setOnClickListener(v -> ((MainActivity) requireActivity()).openSnap());
+
+        // Toggle which regen button shows after a capture
+        imageVM.getCapturedImage().observe(getViewLifecycleOwner(), bitmap -> {
+            boolean has = (bitmap != null);
+
+            // before-gen area
+            binding.btnSnap.setVisibility(has ? View.GONE : View.VISIBLE);
+            binding.btnPreviewImage.setVisibility(has ? View.VISIBLE : View.GONE);
+
+            // after-gen area
+            if (playlistsGenerated) {
+                binding.btnPreviewImageRegen.setVisibility(has ? View.VISIBLE : View.GONE);
+                binding.btnSnapRegen.setVisibility(has ? View.GONE : View.VISIBLE);
+            }
+        });
 
         // GO / Regenerate → run the 20s window + context + AI + Spotify
         binding.btnGo.setOnClickListener(v -> beginWindow(DEFAULT_WINDOW_SECONDS));
         binding.btnRegenerate.setOnClickListener(v -> beginWindow(DEFAULT_WINDOW_SECONDS));
 
-        binding.btnSnapRegen.setOnClickListener(v -> ((MainActivity) requireActivity()).openSnap());
 
         // restore previously generated playlists/state when coming back from other tabs
         homeStateVM.getPlaylists().observe(getViewLifecycleOwner(), pl -> {
@@ -226,6 +242,12 @@ public class HomeFragment extends Fragment {
         if (binding == null) return;
         if (isCurrentlyLoading) return; // dont apply UI changes if currently loading
         if (generated) {
+            // ensure regen buttons reflect current image state
+            Bitmap b = imageVM.getCapturedImage().getValue();
+            boolean has = (b != null);
+            binding.btnPreviewImageRegen.setVisibility(has ? View.VISIBLE : View.GONE);
+            binding.btnSnapRegen.setVisibility(has ? View.GONE : View.VISIBLE);
+
             binding.welcomeCard.setVisibility(View.GONE);
             binding.createVibeCard.setVisibility(View.GONE);
             binding.contextCardsContainer.setVisibility(View.GONE);
@@ -344,11 +366,20 @@ public class HomeFragment extends Fragment {
             PermissionManager.requestSpeedSensing(this);
         }
 
-        // reset join state every run
-        speedReady = !settingsManager.isAccelerometerEnabled(); // if speed disabled, treat as ready
-        labelsReady = true; // default true; we’ll set false only if we actually need to run analysis
+        // decide if we should use/analyze image labels this run
+        Bitmap current = imageVM.getCapturedImage().getValue();
+        useImageLabelsThisRun = (current != null && current != imageUsedLastRun);
 
-        maybeStartImageLabelsWork();
+        // reset join-state
+        speedReady  = !settingsManager.isAccelerometerEnabled();
+
+        // IMPORTANT: Only run labels if there’s a *new* image this run
+        if (useImageLabelsThisRun) {
+            labelsReady = false;
+            maybeStartImageLabelsWork();   // as before
+        } else {
+            labelsReady = true;            // skip labels entirely this run
+        }
 
         // Regardless, we arm the same-duration watchdog → single source of truth UX
         armWatchdog(seconds);
@@ -543,7 +574,9 @@ public class HomeFragment extends Fragment {
         }
 
         if (!settingsManager.isAIMode()) {
-            runSpotify(fallbackQuery(ctx));   // skip AI, deterministic fallback
+            runSpotify(fallbackQuery(ctx));
+            imageUsedLastRun = imageVM.getCapturedImage().getValue();// skip AI, deterministic fallback
+            currentImageLabels = null;
             return;
         }
 
@@ -563,6 +596,7 @@ public class HomeFragment extends Fragment {
     }
 
     private List<String> topImageLabelStrings(int n) {
+        if (!useImageLabelsThisRun) return new ArrayList<>();
         List<String> out = new ArrayList<>();
         if (currentImageLabels != null && currentImageLabels.getItems() != null) {
             for (ImageLabels.LabelConfidence lc : currentImageLabels.getItems()) {
@@ -605,10 +639,15 @@ public class HomeFragment extends Fragment {
 
                     // End generation state FIRST before updating UI
                     onGenerationEnd();
-
-                    // persist data + generated flag
                     homeStateVM.setPlaylists(playlists);
                     homeStateVM.setRecommendationsGenerated(true);
+
+                    // make image one-shot
+                    imageVM.clearImage();            // removes bitmap + labels
+                    currentImageLabels = null;       // local cache reset
+                    useImageLabelsThisRun = false;   // ensure no carry-over
+                    imageUsedLastRun = null;         // future runs start clean
+
 
                     binding.loadingContainer.setVisibility(View.GONE);
                     binding.btnGo.setEnabled(true);
@@ -631,7 +670,6 @@ public class HomeFragment extends Fragment {
                     populateContextChipsFor(lastContext != null ? lastContext : ctxFromLastKnown()); // render chips from last known
                     populateSpotifyPlaylistCards();
                     binding.playlistEmptyText.setVisibility(playlists.isEmpty() ? View.VISIBLE : View.GONE);
-                    onGenerationEnd();
                 });
             }
 
@@ -656,6 +694,8 @@ public class HomeFragment extends Fragment {
                         binding.lightValue.setVisibility(View.GONE);
                         binding.locationValue.setVisibility(View.GONE);
                         binding.speedValue.setVisibility(View.GONE);
+                        imageUsedLastRun = imageVM.getCapturedImage().getValue();
+                        currentImageLabels = null;
                         onGenerationEnd();
                     } else {
                         binding.welcomeCard.setVisibility(View.VISIBLE);
@@ -665,6 +705,8 @@ public class HomeFragment extends Fragment {
                         binding.lightValue.setVisibility(View.VISIBLE);
                         binding.locationValue.setVisibility(View.VISIBLE);
                         binding.speedValue.setVisibility(View.VISIBLE);
+                        imageUsedLastRun = imageVM.getCapturedImage().getValue();
+                        currentImageLabels = null;
                         onGenerationEnd();
                         Toast.makeText(requireContext(), "Error fetching playlists. Try again.", Toast.LENGTH_SHORT).show();
                     }

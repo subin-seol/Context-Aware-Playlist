@@ -364,6 +364,19 @@
                     android:textStyle="bold" />
 
                 <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnPreviewImageRegen"
+                    style="@style/Widget.MaterialComponents.Button"
+                    android:layout_width="wrap_content"
+                    android:layout_height="48dp"
+                    android:layout_marginStart="@dimen/space_12"
+                    android:text="View Image"
+                    android:textAllCaps="false"
+                    android:textColor="@android:color/black"
+                    app:cornerRadius="12dp"
+                    app:backgroundTint="@color/teal_accent"
+                    android:visibility="gone"/>
+
+                <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnSnapRegen"
                     style="@style/Widget.MaterialComponents.Button"
                     android:layout_width="48dp"

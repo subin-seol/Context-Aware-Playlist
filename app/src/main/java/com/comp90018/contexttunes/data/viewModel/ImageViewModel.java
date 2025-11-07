@@ -52,4 +52,13 @@ public class ImageViewModel extends ViewModel {
     public LiveData<ImageLabels> getImageLabels() {
         return imageLabels;
     }
+
+    /** Clear image & labels after a run so the next run has none. */
+    public void clearImage() {
+        // (Optional) recycle if created the bitmap manually
+        // Bitmap b = capturedImage.getValue();
+        // if (b != null && !b.isRecycled()) b.recycle();
+        capturedImage.setValue(null);
+        imageLabels.setValue(null);
+    }
 }
