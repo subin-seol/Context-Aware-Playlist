@@ -227,6 +227,11 @@ public class HomeFragment extends Fragment {
             binding.welcomeCard.setVisibility(View.GONE);
             binding.createVibeCard.setVisibility(View.GONE);
             binding.contextCardsContainer.setVisibility(View.GONE);
+            binding.weatherStatus.setVisibility(View.GONE);
+            binding.lightValue.setVisibility(View.GONE);
+            binding.locationValue.setVisibility(View.GONE);
+            binding.speedValue.setVisibility(View.GONE);
+
 
             binding.currentMoodCard.setVisibility(View.VISIBLE);
             binding.regenerateCard.setVisibility(View.VISIBLE);
@@ -242,6 +247,10 @@ public class HomeFragment extends Fragment {
             binding.welcomeCard.setVisibility(View.VISIBLE);
             binding.createVibeCard.setVisibility(View.VISIBLE);
             binding.contextCardsContainer.setVisibility(View.VISIBLE);
+            binding.weatherStatus.setVisibility(View.VISIBLE);
+            binding.lightValue.setVisibility(View.VISIBLE);
+            binding.locationValue.setVisibility(View.VISIBLE);
+            binding.speedValue.setVisibility(View.VISIBLE);
         }
     }
 
@@ -592,6 +601,9 @@ public class HomeFragment extends Fragment {
                     spotifyPlaylists = playlists;
                     playlistsGenerated = true;
 
+                    // End generation state FIRST before updating UI
+                    onGenerationEnd();
+
                     // persist data + generated flag
                     homeStateVM.setPlaylists(playlists);
                     homeStateVM.setRecommendationsGenerated(true);
@@ -599,6 +611,15 @@ public class HomeFragment extends Fragment {
                     binding.loadingContainer.setVisibility(View.GONE);
                     binding.btnGo.setEnabled(true);
                     binding.btnRegenerate.setEnabled(true);
+
+                    // Explicitly hide "before" state
+                    binding.welcomeCard.setVisibility(View.GONE);
+                    binding.createVibeCard.setVisibility(View.GONE);
+                    binding.contextCardsContainer.setVisibility(View.GONE);
+                    binding.weatherStatus.setVisibility(View.GONE);
+                    binding.lightValue.setVisibility(View.GONE);
+                    binding.locationValue.setVisibility(View.GONE);
+                    binding.speedValue.setVisibility(View.GONE);
 
                     // Show “after” state
                     binding.currentMoodCard.setVisibility(View.VISIBLE);
@@ -629,11 +650,19 @@ public class HomeFragment extends Fragment {
                         binding.playlistEmptyText.setText(getString(R.string.no_playlists_found));
                         binding.playlistEmptyText.setVisibility(View.VISIBLE);
                         binding.contextCardsContainer.setVisibility(View.GONE);
+                        binding.weatherStatus.setVisibility(View.GONE);
+                        binding.lightValue.setVisibility(View.GONE);
+                        binding.locationValue.setVisibility(View.GONE);
+                        binding.speedValue.setVisibility(View.GONE);
                         onGenerationEnd();
                     } else {
                         binding.welcomeCard.setVisibility(View.VISIBLE);
                         binding.createVibeCard.setVisibility(View.VISIBLE);
                         binding.contextCardsContainer.setVisibility(View.VISIBLE);
+                        binding.weatherStatus.setVisibility(View.VISIBLE);
+                        binding.lightValue.setVisibility(View.VISIBLE);
+                        binding.locationValue.setVisibility(View.VISIBLE);
+                        binding.speedValue.setVisibility(View.VISIBLE);
                         onGenerationEnd();
                         Toast.makeText(requireContext(), "Error fetching playlists. Try again.", Toast.LENGTH_SHORT).show();
                     }

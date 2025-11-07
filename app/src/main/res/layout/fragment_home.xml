@@ -350,58 +350,51 @@
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:gravity="center"
-                android:padding="24dp">
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:padding="@dimen/space_16">
 
                 <TextView
-                    android:layout_width="wrap_content"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:text="Want a different vibe?"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="14sp"
-                    android:layout_marginBottom="@dimen/space_16" />
+                    android:layout_weight="1"
+                    android:text="Regenerate Playlist"
+                    android:textColor="@color/text_primary"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
 
-                <LinearLayout
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnSnapRegen"
+                    style="@style/Widget.MaterialComponents.Button"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:insetLeft="0dp"
+                    android:insetTop="0dp"
+                    android:insetRight="0dp"
+                    android:insetBottom="0dp"
+                    app:icon="@drawable/camera"
+                    app:iconGravity="textStart"
+                    app:iconPadding="0dp"
+                    app:cornerRadius="12dp"
+                    app:backgroundTint="#3A4A5C"
+                    app:iconTint="@color/text_primary" />
+
+                <Space
+                    android:layout_width="@dimen/space_12"
+                    android:layout_height="0dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnRegenerate"
+                    style="@style/Widget.MaterialComponents.Button"
                     android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center">
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnSnapRegen"
-                        style="@style/Widget.MaterialComponents.Button"
-                        android:layout_width="48dp"
-                        android:layout_height="48dp"
-                        android:insetLeft="0dp"
-                        android:insetTop="0dp"
-                        android:insetRight="0dp"
-                        android:insetBottom="0dp"
-                        app:icon="@drawable/camera"
-                        app:iconGravity="textStart"
-                        app:iconPadding="0dp"
-                        app:cornerRadius="12dp"
-                        app:backgroundTint="#3A4A5C"
-                        app:iconTint="@color/text_primary" />
-
-                    <Space
-                        android:layout_width="@dimen/space_16"
-                        android:layout_height="0dp" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnRegenerate"
-                        style="@style/Widget.MaterialComponents.Button"
-                        android:layout_width="wrap_content"
-                        android:layout_height="56dp"
-                        android:text="Regenerate"
-                        android:textAllCaps="false"
-                        android:textSize="16sp"
-                        android:paddingStart="32dp"
-                        android:paddingEnd="32dp"
-                        app:cornerRadius="16dp"
-                        app:backgroundTint="@color/teal_accent"
-                        android:textColor="@android:color/black" />
-                </LinearLayout>
+                    android:layout_height="48dp"
+                    android:text="GO"
+                    android:textAllCaps="true"
+                    android:paddingStart="24dp"
+                    android:paddingEnd="24dp"
+                    app:cornerRadius="12dp"
+                    app:backgroundTint="@color/teal_accent"
+                    android:textColor="@android:color/black" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
